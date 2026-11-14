@@ -17,34 +17,53 @@ Consulta también `sastreria-arquitectura` (reglas generales) y `sastreria-domin
 - Tablas y columnas en `snake_case` y plural para tablas (`work_orders`, `serial_number`).
 - Commits con Conventional Commits en inglés: `feat(work-orders): add serial number sequence`.
 
-## Estructura interna del servicio
+## Estructura interna del servicio (DDD, un proyecto por capa)
+Cada servicio es un *bounded context* y se divide en cuatro proyectos, para que el compilador haga cumplir la regla de dependencias:
+
 ```
 src/Services/WorkOrderService/
-├── WorkOrderService.csproj
-├── Program.cs
-├── Domain/          # entidades, enums, reglas (sin dependencias externas)
-├── Application/     # casos de uso, DTOs, validaciones
-├── Infrastructure/  # DbContext, migraciones, consumidores, clientes externos
-├── Endpoints/       # minimal APIs o controllers
-├── Dockerfile
-└── appsettings.json
+├── WorkOrderService.Domain/           # agregados, entidades, value objects, domain events, interfaces de repositorio
+├── WorkOrderService.Application/      # casos de uso (commands/queries + handlers), DTOs, puertos
+├── WorkOrderService.Infrastructure/   # EF Core, DbContext, repositorios, outbox, consumidores, Redis
+└── WorkOrderService.Api/              # Program.cs, endpoints, DI, health checks, Dockerfile
+tests/
+├── WorkOrderService.Domain.Tests/
+└── WorkOrderService.Application.Tests/
 ```
-Pruebas en `tests/` junto a `src/`, un proyecto por servicio (`WorkOrderService.Tests`). Mantén la lógica de negocio en `Domain`, para poder probarla sin base de datos.
+
+**Regla de dependencias** (las flechas apuntan hacia adentro, nunca al revés):
+`Api → Application + Infrastructure`, `Infrastructure → Application`, `Application → Domain`, `Domain → nada`.
+`Domain` no referencia ningún paquete de infraestructura (ni EF Core, ni MassTransit, ni ASP.NET).
+
+## Reglas de DDD
+1. **Lenguaje ubicuo**: las clases usan el vocabulario en inglés de `sastreria-dominio` (`WorkOrder`, `Tailor`, `Settlement`...). Si el negocio cambia un término, se cambia en el código.
+2. **Agregados**: un agregado es un límite de consistencia y de transacción. Una transacción modifica **un solo agregado**. Se accede a sus partes internas solo por la raíz.
+   - `WorkOrder` (raíz; contiene sus `AlterationJob`), `Payment`, `Tailor`, `Settlement` (raíz; contiene `SettlementLine`).
+   - **Un agregado referencia a otro solo por ID** (`WorkOrderId`, `TailorId`), nunca por objeto.
+3. **Modelo rico, no anémico**: las reglas viven en el agregado. Nada de `workOrder.Status = ...` desde fuera; se usan métodos con intención (`workOrder.AssignTo(tailorId)`, `workOrder.MarkDeliveredByTailor()`) que validan la transición y lanzan una excepción de dominio si es ilegal.
+4. **Constructores protegidos**: las entidades se crean con *factory methods* estáticos (`WorkOrder.Create(...)`) que dejan el objeto siempre válido. Setters `private`. EF Core usa un constructor privado sin parámetros.
+5. **Value objects** inmutables (`record`) para conceptos sin identidad: `Money`, `SerialNumber`, `Percentage`. Se validan al crearse. El dinero nunca es un `decimal` suelto en el dominio.
+6. **Identificadores tipados** (`WorkOrderId`, `TailorId`) en vez de `Guid` sueltos, para no mezclarlos.
+7. **Domain events** (ej. `WorkOrderCreated`) los levanta el agregado en una lista interna. Se despachan al guardar. **No son lo mismo** que los *integration events* de `Contracts`: el handler de Application traduce un domain event a un integration event y lo publica por el outbox.
+8. **Repositorios**: una interfaz por agregado raíz, definida en `Domain`, implementada en `Infrastructure`. Solo cargan y guardan agregados completos.
+9. **Domain services / policies** para reglas que no pertenecen a una sola entidad (ej. `SettlementEligibilityPolicy`: qué work orders entran a una liquidación).
+10. **Application**: un caso de uso = un handler (`CreateWorkOrderHandler`). Orquesta: carga el agregado, ejecuta el método de dominio, guarda. Sin lógica de negocio. Empezamos con handlers propios, sin MediatR (ahora tiene licencia comercial); se puede revisar más adelante.
+11. Las **consultas (lectura)** pueden saltarse el dominio y leer con proyecciones directas a DTOs, para no cargar agregados completos solo para mostrar listas.
 
 ## Pasos para crear un servicio
-1. Crear el proyecto: `dotnet new webapi -n <Nombre>Service -o src/Services/<Nombre>Service` y agregarlo a la solución con `dotnet sln add`.
-2. Borrar de su `.csproj` lo que ya define `Directory.Build.props` (`TargetFramework`, `Nullable`, `ImplicitUsings`).
+1. Crear los cuatro proyectos (`Api` con `dotnet new webapi`, el resto con `dotnet new classlib`), agregarlos a la solución y configurar las referencias según la regla de dependencias.
+2. Borrar de cada `.csproj` lo que ya define `Directory.Build.props` (`TargetFramework`, `Nullable`, `ImplicitUsings`) y quitar `Class1.cs`.
 3. Agregar paquetes con `dotnet add package`; la versión queda en `Directory.Packages.props`. No escribas versiones dentro del `.csproj`.
-4. Configurar EF Core con Npgsql y su **propia base de datos** (`<nombre>_db`).
-5. Añadir health check (`/health`) para Docker y Kubernetes.
-6. Si publica eventos: MassTransit con RabbitMQ y **outbox de EF Core**. Si los consume: consumidores idempotentes con reintentos y DLQ.
-7. Crear el `Dockerfile` (multi-stage: `sdk` para compilar, `aspnet` para correr) y añadir el servicio a `docker-compose.yml` con su PostgreSQL, variables de entorno y `depends_on` con health checks.
-8. Escribir pruebas del dominio antes de exponer endpoints.
+4. Empezar siempre por el **dominio** (agregado, value objects, reglas) y sus pruebas unitarias, antes de tocar BD o endpoints.
+5. Application: casos de uso e interfaces. Infrastructure: EF Core con Npgsql y su **propia base de datos** (`<name>_db`).
+6. Api: endpoints, health check (`/health`), inyección de dependencias.
+7. Si publica eventos: MassTransit con RabbitMQ y **outbox de EF Core**. Si los consume: consumidores idempotentes con reintentos y DLQ.
+8. `Dockerfile` multi-stage en el proyecto `Api` y entrada en `docker-compose.yml` con su PostgreSQL, variables de entorno y `depends_on` con health checks.
 
 ## Reglas de código
 - Validar toda entrada en el borde (endpoints), no confiar en el cliente.
-- Un endpoint no contiene lógica de negocio: delega en `Application`/`Domain`.
-- Transiciones de estado **solo** a través de métodos de la entidad que validen que el cambio es legal (ej. no pasar a `DeliveredByTailor` desde `Received`).
+- Un endpoint no contiene lógica de negocio: delega en un handler de `Application`.
+- Transiciones de estado **solo** mediante métodos del agregado (ej. no se puede pasar a `DeliveredByTailor` desde `Received`).
 - Migraciones EF versionadas en git; nunca editar una migración ya aplicada.
 - Logs estructurados con Serilog; incluir el `SerialNumber` de la work order o el id de correlación en cada log relevante.
 - No exponer entidades de dominio en la API; usar DTOs.
