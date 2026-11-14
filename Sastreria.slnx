@@ -9,4 +9,7 @@
   <Folder Name="/src/Services/WorkOrderService/WorkOrderService.Application/">
     <Project Path="src/Services/WorkOrderService/WorkOrderService.Application/WorkOrderService.Application.csproj" />
   </Folder>
+  <Folder Name="/test/">
+    <Project Path="test/WorkOrderService.Domain.Tests/WorkOrderService.Domain.Tests.csproj" />
+  </Folder>
 </Solution>
