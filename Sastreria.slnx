@@ -7,6 +7,6 @@
     <Project Path="src/Services/WorkOrderService/WorkOrderService.Infrastructure/WorkOrderService.Infrastructure.csproj" />
   </Folder>
   <Folder Name="/src/Services/WorkOrderService/WorkOrderService.Application/">
-    <Project Path="src/Services/WorkOrderService/WorkOrderService.Application/WorkOrderService.Applicarion.csproj" />
+    <Project Path="src/Services/WorkOrderService/WorkOrderService.Application/WorkOrderService.Application.csproj" />
   </Folder>
 </Solution>

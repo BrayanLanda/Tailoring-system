@@ -5,7 +5,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\WorkOrderService.Application\WorkOrderService.Applicarion.csproj" />
+    <ProjectReference Include="..\WorkOrderService.Application\WorkOrderService.Application.csproj" />
     <ProjectReference Include="..\WorkOrderService.Infrastructure\WorkOrderService.Infrastructure.csproj" />
   </ItemGroup>
 

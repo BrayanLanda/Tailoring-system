@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
-    <ProjectReference Include="..\WorkOrderService.Application\WorkOrderService.Applicarion.csproj" />
+    <ProjectReference Include="..\WorkOrderService.Application\WorkOrderService.Application.csproj" />
   </ItemGroup>
 
 </Project>
