@@ -1,2 +1,12 @@
 <Solution>
+  <Folder Name="/src/" />
+  <Folder Name="/src/Services/" />
+  <Folder Name="/src/Services/WorkOrderService/">
+    <Project Path="src/Services/WorkOrderService/WorkOrderService.Api/WorkOrderService.Api.csproj" />
+    <Project Path="src/Services/WorkOrderService/WorkOrderService.Domain/WorkOrderService.Domain.csproj" />
+    <Project Path="src/Services/WorkOrderService/WorkOrderService.Infrastructure/WorkOrderService.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/src/Services/WorkOrderService/WorkOrderService.Application/">
+    <Project Path="src/Services/WorkOrderService/WorkOrderService.Application/WorkOrderService.Applicarion.csproj" />
+  </Folder>
 </Solution>
