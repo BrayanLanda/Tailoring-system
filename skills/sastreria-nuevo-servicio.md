@@ -57,6 +57,7 @@ test/
     - Identificadores tipados como `readonly record struct`; los del propio servicio usan `Guid.CreateVersion7()`. El ID de un agregado ajeno (ej. `TailorId`) **no** tiene `New()`.
     - **El dominio nunca llama al reloj** (`DateTime.UtcNow`): las fechas entran por parámetro, así las pruebas son exactas.
     - Las entidades internas de un agregado (ej. `Payment`) tienen fábrica `internal`: solo la raíz puede crearlas.
+    - **Domain events**: `record` que implementa `IDomainEvent`, en `Domain/Events`. El agregado hereda de `AggregateRoot` y los levanta con `Raise(...)` solo cuando la operación tuvo éxito (si falla, no se levanta nada). Llevan IDs y los datos que otros servicios necesitan; la hora solo si el dominio la conoce (el outbox sella el resto). Infrastructure debe ignorar `DomainEvents` al mapear con EF Core.
     - Operaciones que pueden reintentarse (ej. `RegisterPayment`) son idempotentes mediante un ID que llega de fuera (`PaymentId`); repetir el mismo ID no duplica nada.
     - Los enums empiezan en `1`, para que el `0` por defecto nunca sea un estado válido.
     - Los campos de fecha de hitos importantes (ej. `DeliveredByTailorAt`) se guardan en el agregado; la liquidación depende de ellos.

@@ -1,10 +1,12 @@
+using WorkOrderService.Domain.Common;
 using WorkOrderService.Domain.Enums;
+using WorkOrderService.Domain.Events;
 using WorkOrderService.Domain.Exceptions;
 using WorkOrderService.Domain.ValueObjects;
 
 namespace WorkOrderService.Domain.Entities;
 
-public class WorkOrder
+public class WorkOrder : AggregateRoot
 {
 
     private readonly List<Payment> _payments = [];
@@ -26,7 +28,6 @@ public class WorkOrder
     public DateTimeOffset? DeliveredToCustomerAt { get; private set; }
     public WarrantyCompensation? Compensation { get; private set; }
 
-    // Warranty traceability
     public WorkOrderId? OriginalWorkOrderId { get; private set; }
     public TailorId? OriginalTailorId { get; private set; }
     public string? ReassignmentReason { get; private set; }
@@ -40,14 +41,21 @@ public class WorkOrder
     private WorkOrder() { }
 
     public static WorkOrder Create(
-       SerialNumber serialNumber,
-       string customerName,
-       PhoneNumber customerPhone,
-       string garmentDescription,
-       IEnumerable<AlterationJob> jobs,
-       DateTimeOffset createdAt) =>
-       Build(WorkOrderType.Regular, PaymentStatus.Unpriced,
-             serialNumber, customerName, customerPhone, garmentDescription, jobs, createdAt);
+    SerialNumber serialNumber,
+    string customerName,
+    PhoneNumber customerPhone,
+    string garmentDescription,
+    IEnumerable<AlterationJob> jobs,
+    DateTimeOffset createdAt)
+    {
+        var workOrder = Build(WorkOrderType.Regular, PaymentStatus.Unpriced,
+                              serialNumber, customerName, customerPhone, garmentDescription, jobs, createdAt);
+
+        workOrder.Raise(new WorkOrderCreated(
+            workOrder.Id, workOrder.SerialNumber, workOrder.Type, null, workOrder.CreatedAt));
+
+        return workOrder;
+    }
 
     public static WorkOrder CreateWarranty(
         SerialNumber serialNumber,
@@ -67,6 +75,8 @@ public class WorkOrder
 
         warranty.OriginalWorkOrderId = originalWorkOrderId;
         warranty.OriginalTailorId = originalTailorId;
+        warranty.Raise(new WorkOrderCreated(
+            warranty.Id, warranty.SerialNumber, warranty.Type, originalWorkOrderId, warranty.CreatedAt));
         return warranty;
     }
 
@@ -125,6 +135,7 @@ public class WorkOrder
 
         TailorId = tailorId;
         Status = WorkStatus.Assigned;
+        Raise(new TailorAssigned(Id, tailorId, ReassignmentReason));
     }
 
     public void StartWork()
@@ -145,6 +156,7 @@ public class WorkOrder
 
         DeliveredByTailorAt = deliveredAt;
         Status = WorkStatus.DeliveredByTailor;
+        Raise(new GarmentDeliveredByTailor(Id, TailorId!.Value, Type, deliveredAt));
     }
 
     public void SetPrice(Money price)
@@ -160,6 +172,7 @@ public class WorkOrder
 
         Price = price;
         PaymentStatus = PaymentStatus.Priced;
+        Raise(new PriceSet(Id, price));
     }
 
     public void RegisterPayment(PaymentId paymentId, Money amount, DateTimeOffset paidAt)
@@ -187,6 +200,8 @@ public class WorkOrder
         PaymentStatus = AmountPaid.Amount == price.Amount
             ? PaymentStatus.Paid
             : PaymentStatus.PartiallyPaid;
+
+        Raise(new PaymentReceived(Id, paymentId, amount, PaymentStatus, paidAt));
     }
 
     public void DeliverToCustomer(DateTimeOffset deliveredAt)
@@ -202,6 +217,7 @@ public class WorkOrder
 
         DeliveredToCustomerAt = deliveredAt;
         Status = WorkStatus.DeliveredToCustomer;
+        Raise(new GarmentDeliveredToCustomer(Id, deliveredAt));
     }
 
     public void AuthorizeCompensation(Money amount, string authorizedBy, DateTimeOffset authorizedAt)
@@ -222,5 +238,8 @@ public class WorkOrder
             throw new DomainException("Authorization date cannot be before the creation date.");
 
         Compensation = WarrantyCompensation.Of(amount, authorizedBy, authorizedAt);
+
+        Raise(new WarrantyCompensationAuthorized(
+            Id, TailorId.Value, Compensation.Amount, Compensation.AuthorizedBy, Compensation.AuthorizedAt));
     }
 }

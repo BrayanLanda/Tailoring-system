@@ -1,5 +1,6 @@
 using WorkOrderService.Domain.Entities;
 using WorkOrderService.Domain.Enums;
+using WorkOrderService.Domain.Events;
 using WorkOrderService.Domain.Exceptions;
 using WorkOrderService.Domain.ValueObjects;
 
@@ -514,5 +515,149 @@ public class WorkOrderTests
     {
         Assert.Throws<DomainException>(() =>
             WorkOrder.CreateWarranty(SerialNumber.From(2), "Pedro Gomez", Phone, "Black pants", [], Now));
+    }
+
+    [Fact]
+    public void Create_RaisesWorkOrderCreated()
+    {
+        var workOrder = NewWorkOrder();
+
+        var created = Assert.IsType<WorkOrderCreated>(Assert.Single(workOrder.DomainEvents));
+        Assert.Equal(workOrder.Id, created.WorkOrderId);
+        Assert.Equal(SerialNumber.From(1), created.SerialNumber);
+        Assert.Equal(WorkOrderType.Regular, created.Type);
+        Assert.Null(created.OriginalWorkOrderId);
+        Assert.Equal(Now, created.CreatedAt);
+    }
+
+    [Fact]
+    public void CreateWarranty_RaisesWorkOrderCreatedWithTheOriginalLink()
+    {
+        var originalId = WorkOrderId.New();
+
+        var warranty = NewWarranty(originalId, new TailorId(Guid.NewGuid()));
+
+        var created = Assert.IsType<WorkOrderCreated>(Assert.Single(warranty.DomainEvents));
+        Assert.Equal(WorkOrderType.Warranty, created.Type);
+        Assert.Equal(originalId, created.OriginalWorkOrderId);
+    }
+
+    [Fact]
+    public void AssignTo_RaisesTailorAssigned()
+    {
+        var tailorId = new TailorId(Guid.NewGuid());
+        var workOrder = NewWorkOrder();
+
+        workOrder.AssignTo(tailorId);
+
+        var assigned = workOrder.DomainEvents.OfType<TailorAssigned>().Single();
+        Assert.Equal(workOrder.Id, assigned.WorkOrderId);
+        Assert.Equal(tailorId, assigned.TailorId);
+        Assert.Null(assigned.ReassignmentReason);
+    }
+
+    [Fact]
+    public void SetPrice_RaisesPriceSet()
+    {
+        var workOrder = NewWorkOrder();
+
+        workOrder.SetPrice(Money.Of(25000m));
+
+        var priceSet = workOrder.DomainEvents.OfType<PriceSet>().Single();
+        Assert.Equal(Money.Of(25000m), priceSet.Price);
+    }
+
+    [Fact]
+    public void RegisterPayment_RaisesPaymentReceivedWithTheNewStatus()
+    {
+        var workOrder = PricedWorkOrder(30000m);
+        var paymentId = PaymentId.New();
+
+        workOrder.RegisterPayment(paymentId, Money.Of(10000m), Now);
+
+        var received = workOrder.DomainEvents.OfType<PaymentReceived>().Single();
+        Assert.Equal(paymentId, received.PaymentId);
+        Assert.Equal(Money.Of(10000m), received.Amount);
+        Assert.Equal(PaymentStatus.PartiallyPaid, received.PaymentStatus);
+        Assert.Equal(Now, received.PaidAt);
+    }
+
+    [Fact]
+    public void RegisterPayment_SamePaymentIdTwice_RaisesTheEventOnlyOnce()
+    {
+        var workOrder = PricedWorkOrder(30000m);
+        var paymentId = PaymentId.New();
+
+        workOrder.RegisterPayment(paymentId, Money.Of(10000m), Now);
+        workOrder.RegisterPayment(paymentId, Money.Of(10000m), Now);
+
+        Assert.Single(workOrder.DomainEvents.OfType<PaymentReceived>());
+    }
+
+    [Fact]
+    public void MarkDeliveredByTailor_RaisesGarmentDeliveredByTailor()
+    {
+        var tailorId = new TailorId(Guid.NewGuid());
+        var workOrder = NewWorkOrder();
+        workOrder.AssignTo(tailorId);
+        var deliveredAt = Now.AddDays(2);
+
+        workOrder.MarkDeliveredByTailor(deliveredAt);
+
+        var delivered = workOrder.DomainEvents.OfType<GarmentDeliveredByTailor>().Single();
+        Assert.Equal(tailorId, delivered.TailorId);
+        Assert.Equal(WorkOrderType.Regular, delivered.Type);
+        Assert.Equal(deliveredAt, delivered.DeliveredAt);
+    }
+
+    [Fact]
+    public void DeliverToCustomer_RaisesGarmentDeliveredToCustomer()
+    {
+        var workOrder = AssignedWorkOrder();
+        workOrder.SetPrice(Money.Of(30000m));
+        workOrder.RegisterPayment(PaymentId.New(), Money.Of(30000m), Now.AddDays(1));
+        workOrder.MarkDeliveredByTailor(Now.AddDays(2));
+        var deliveredAt = Now.AddDays(3);
+
+        workOrder.DeliverToCustomer(deliveredAt);
+
+        var delivered = workOrder.DomainEvents.OfType<GarmentDeliveredToCustomer>().Single();
+        Assert.Equal(deliveredAt, delivered.DeliveredAt);
+    }
+
+    [Fact]
+    public void AuthorizeCompensation_RaisesWarrantyCompensationAuthorized()
+    {
+        var warranty = WarrantyDoneByAnotherTailor();
+        var authorizedAt = Now.AddDays(3);
+
+        warranty.AuthorizeCompensation(Money.Of(8000m), "Owner", authorizedAt);
+
+        var authorized = warranty.DomainEvents.OfType<WarrantyCompensationAuthorized>().Single();
+        Assert.Equal(warranty.TailorId, authorized.TailorId);
+        Assert.Equal(Money.Of(8000m), authorized.Amount);
+        Assert.Equal("Owner", authorized.AuthorizedBy);
+        Assert.Equal(authorizedAt, authorized.AuthorizedAt);
+    }
+
+    [Fact]
+    public void WhenAnOperationFails_NoEventIsRaised()
+    {
+        var workOrder = AssignedWorkOrder();
+        workOrder.ClearDomainEvents();
+
+        Assert.Throws<DomainException>(() => workOrder.AssignTo(new TailorId(Guid.NewGuid())));
+
+        Assert.Empty(workOrder.DomainEvents);
+    }
+
+    [Fact]
+    public void ClearDomainEvents_RemovesAllEvents()
+    {
+        var workOrder = NewWorkOrder();
+
+        workOrder.ClearDomainEvents();
+
+        Assert.Empty(workOrder.DomainEvents);
     }
 }
