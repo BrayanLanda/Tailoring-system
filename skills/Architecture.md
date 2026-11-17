@@ -5,6 +5,9 @@ description: Arquitectura, stack, estructura de carpetas y decisiones técnicas 
 
 # Arquitectura: sastrería
 
+## Enfoque
+Se usa **Domain-Driven Design**: cada servicio es un *bounded context* con su propio modelo y lenguaje. Dentro de cada servicio hay cuatro proyectos (Domain, Application, Infrastructure, Api). Detalle en la skill `sastreria-nuevo-servicio`.
+
 ## Objetivo del proyecto
 El negocio es pequeño y un monolito modular sería más simple. Se eligen **microservicios a propósito**, para practicar un entorno realista: Docker, colas, caché, outbox, observabilidad y Kubernetes. Por eso es correcto aplicar patrones "de producción" aunque parezcan excesivos, pero no agregues piezas que no tengan un uso concreto en el negocio.
 
@@ -26,8 +29,7 @@ sastreria/
 ├── src/
 │   ├── BuildingBlocks/Contracts/     # eventos compartidos (solo records/DTOs)
 │   ├── Services/
-│   │   ├── WorkOrderService/
-│   │   ├── PaymentService/
+│   │   ├── WorkOrderService/         # .Domain / .Application / .Infrastructure / .Api
 │   │   ├── TailorService/
 │   │   └── SettlementService/
 │   ├── IdentityService/              # (a definir su ubicación al llegar a este paso)
@@ -47,8 +49,7 @@ sastreria/
 ## Servicios y responsabilidades
 | Servicio | Responsabilidad | Persistencia |
 |---|---|---|
-| WorkOrderService | Boletas, serial, garantías, estados de trabajo y de precio | PostgreSQL |
-| PaymentService | Pagos del cliente (al recibir, al retirar, parciales) | PostgreSQL |
+| WorkOrderService | Boletas, serial, garantías, estados de trabajo, precio y pagos (abonos) | PostgreSQL |
 | TailorService | Sastres y asignación de trabajos | PostgreSQL |
 | SettlementService | Periodos, elegibilidad, cálculo del 35 %, cierre | PostgreSQL + Redis |
 | IdentityService | Usuarios y roles (recepción, sastre, admin) | PostgreSQL |
@@ -73,7 +74,7 @@ sastreria/
 1. Repo y solución base (**hecho**)
 2. WorkOrderService (núcleo)
 3. Contracts + RabbitMQ + outbox
-4. PaymentService
+4. Pagos: ya viven dentro de WorkOrderService (no hay servicio aparte por ahora)
 5. TailorService
 6. SettlementService (Redis para el bloqueo)
 7. Gateway + Identity + Angular

@@ -28,7 +28,7 @@ El negocio se explica en español, pero **todo identificador en código, BD, API
 | Garantía | `Warranty` (una `WorkOrder` con `Type = Warranty`, enlazada por `OriginalWorkOrderId`) |
 | Prenda | `Garment` |
 | Trabajo / arreglo | `AlterationJob` |
-| Cliente | `Customer` |
+| Cliente | `Customer` (en la work order: `CustomerName` y `CustomerPhone`) |
 | Sastre | `Tailor` |
 | Recepción / recepcionista | `Receptionist` |
 | Pago | `Payment` |
@@ -37,6 +37,15 @@ El negocio se explica en español, pero **todo identificador en código, BD, API
 | Periodo de liquidación | `SettlementPeriod` |
 | Línea de liquidación | `SettlementLine` |
 | Cerrar liquidación | `CloseSettlement` |
+
+## Agregados previstos (DDD)
+| Servicio | Agregado raíz | Contiene |
+|---|---|---|
+| WorkOrderService | `WorkOrder` | `AlterationJob`, `Payment` (abonos), estados de trabajo y de pago |
+| TailorService | `Tailor` | datos del sastre y su disponibilidad |
+| SettlementService | `Settlement` | `SettlementLine`, periodo, porcentaje usado |
+
+Value objects: `Money`, `SerialNumber`, `PhoneNumber`, `Percentage`.
 
 ## Dos carriles independientes
 Una boleta avanza por dos máquinas de estado separadas. Modelarlas por separado evita estados imposibles, porque el pago del cliente no depende del trabajo del sastre.
@@ -51,14 +60,31 @@ Una boleta avanza por dos máquinas de estado separadas. Modelarlas por separado
 
 Ejemplos válidos: entregada por el sastre y aún sin pagar; pagada al recibir pero todavía en trabajo.
 
+## Datos del cliente
+- Se guardan nombre y **celular** (`PhoneNumber`): se necesita para avisar que la prenda está lista.
+- Regla provisional del celular: se guarda solo con dígitos, 10 dígitos empezando por 3 (celular colombiano), aceptando prefijo `+57`/`57` y separadores (espacios, guiones, paréntesis).
+
+## Fechas de entrega
+- La work order guarda `DeliveredByTailorAt` y `DeliveredToCustomerAt`. La primera es la **marca de tiempo que usa la liquidación** para decidir en qué periodo cae la boleta.
+- Las fechas entran por parámetro; el dominio nunca llama al reloj del sistema.
+- El sastre puede entregar desde `Assigned` o `InProgress`: `InProgress` es opcional, porque en la práctica recepción no siempre registra que el sastre empezó.
+
 ## Reglas de precio y pago
 1. El pago puede ocurrir al **dejar** la prenda, al **retirarla**, o cuando se defina el precio.
 2. Una boleta puede crearse **sin precio**; el precio se define después según el trabajo.
 3. Una boleta puede tener **cero, uno o varios pagos** (los pagos son registros aparte, no un campo de la boleta).
-4. Los pagos son idempotentes: registrar dos veces el mismo pago (reintento, doble clic) no debe duplicarlo.
+4. **La prenda solo se entrega al cliente cuando está totalmente pagada** (`PaymentStatus = Paid`). `DeliverToCustomer` debe verificarlo.
+5. **Existen pagos parciales (abonos)**: el cliente deja una parte y termina de pagar al reclamar la prenda. No siempre ocurre; a veces paga todo de una vez.
+6. Mientras el sastre entrega la prenda a recepción, la boleta puede seguir sin pagar (el pago no bloquea ese paso, solo bloquea la entrega al cliente).
+7. **Decidido**: los pagos son entidades dentro de `WorkOrder` (no hay `PaymentService` por ahora). Un abono no puede superar el saldo pendiente, y el precio **no se puede cambiar** una vez hay abonos.
+8. Los pagos son idempotentes: registrar dos veces el mismo pago (reintento, doble clic) no debe duplicarlo.
 
 ## Serial
-- Único, **nunca se repite ni se pierde**. Se genera en PostgreSQL con una secuencia, NO en Redis (es dato de negocio crítico).
+- **El sistema asigna el serial** al crear la work order, para evitar errores humanos de digitación y duplicados (decisión del usuario, aunque hoy el negocio usa talonarios preimpresos).
+- Es único y se genera en **PostgreSQL con una secuencia** (`nextval`), NO en Redis. Es dato de negocio crítico.
+- En el dominio es el value object `SerialNumber`, un entero positivo. El dominio **no lo genera**: lo recibe ya asignado. Application obtiene el siguiente valor mediante un puerto (`ISerialNumberGenerator`, definido en Domain, implementado en Infrastructure con la secuencia) y se lo pasa a `WorkOrder.Create(...)`.
+- Una garantía es una work order nueva: recibe **su propio serial** y se enlaza a la original por `OriginalWorkOrderId`.
+- Las secuencias de PostgreSQL garantizan unicidad pero **pueden dejar huecos** (por ejemplo, si una transacción se revierte). Si el negocio exige numeración sin saltos, habría que cambiar de estrategia.
 
 ## Liquidación al sastre
 - El sastre recibe **35 % del valor** de sus boletas elegibles. El porcentaje es **configurable** (hoy 35) y cada línea de liquidación **guarda el porcentaje usado**.
@@ -85,6 +111,9 @@ Ejemplos válidos: entregada por el sastre y aún sin pagar; pagada al recibir p
 - Una liquidación cerrada es **inmutable** (snapshot): líneas, valores, porcentaje y marca de cierre no se editan. Las correcciones se hacen con ajustes en la liquidación siguiente.
 
 ## Pendientes de confirmar con el usuario
+- Medio de pago (efectivo, transferencia...): ¿hay que registrarlo?
+- ¿Cómo se relacionan el número impreso en el talonario físico y el serial del sistema? (¿el sistema imprime la boleta/etiqueta, o se guarda el número del papel como referencia opcional `PaperReference`?). Sin esto, el cliente y el sastre podrían ver un número distinto al del sistema.
+- ¿Es aceptable que haya huecos en la numeración del serial?
 - ¿Una boleta entregada sin precio se paga cuando se define el precio (propuesta actual)?
 - Redondeo del 35 % (a pesos enteros o decimales) y de qué valor se calcula si hubo descuentos o pagos parciales.
 - ¿Una garantía puede asignarse a un sastre distinto del original?

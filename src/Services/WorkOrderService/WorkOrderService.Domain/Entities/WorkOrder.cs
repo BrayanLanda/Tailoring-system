@@ -6,6 +6,12 @@ namespace WorkOrderService.Domain.Entities;
 
 public class WorkOrder
 {
+
+    private readonly List<Payment> _payments = [];
+    public IReadOnlyCollection<Payment> Payments => _payments.AsReadOnly();
+
+    public Money AmountPaid => Money.Of(_payments.Sum(p => p.Amount.Amount));
+    public Money? Balance => Price is null ? null : Price - AmountPaid;
     public WorkOrderId Id { get; private set; }
     public SerialNumber SerialNumber { get; private set; } = null!;
     public string CustomerName { get; private set; } = null!;
@@ -83,6 +89,9 @@ public class WorkOrder
         if (Status != WorkStatus.DeliveredByTailor)
             throw new DomainException($"Cannot deliver to the customer a work order in status {Status}.");
 
+        if (PaymentStatus != PaymentStatus.Paid)
+            throw new DomainException("The work order must be fully paid before delivering it to the customer.");
+            
         if (deliveredAt < DeliveredByTailorAt)
             throw new DomainException("Customer delivery cannot be before the tailor delivery.");
 
@@ -92,11 +101,36 @@ public class WorkOrder
 
     public void SetPrice(Money price)
     {
-        if(price.Amount <= 0)
-            throw new DomainException("Price must be greater than zero");
+        if (PaymentStatus is PaymentStatus.PartiallyPaid or PaymentStatus.Paid)
+            throw new DomainException("The price cannot be changed once payments have been registered.");
+
+        if (price.Amount <= 0)
+            throw new DomainException("Price must be greater than zero.");
 
         Price = price;
         PaymentStatus = PaymentStatus.Priced;
     }
 
+    public void RegisterPayment(PaymentId paymentId, Money amount, DateTimeOffset paidAt)
+    {
+        if (_payments.Any(p => p.Id == paymentId))
+            return;
+
+        var price = Price ?? throw new DomainException("Cannot register a payment on a work order without a price.");
+
+        if (amount.Amount <= 0)
+            throw new DomainException("Payment amount must be greater than zero.");
+
+        if (paidAt < CreatedAt)
+            throw new DomainException("Payment date cannot be before the creation date.");
+
+        if (amount.Amount > (price - AmountPaid).Amount)
+            throw new DomainException("Payment exceeds the pending balance.");
+
+        _payments.Add(Payment.Create(paymentId, amount, paidAt));
+
+        PaymentStatus = AmountPaid.Amount == price.Amount
+            ? PaymentStatus.Paid
+            : PaymentStatus.PartiallyPaid;
+    }
 }

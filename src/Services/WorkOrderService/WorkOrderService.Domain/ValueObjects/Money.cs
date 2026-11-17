@@ -15,4 +15,6 @@ public sealed record Money
     }
     public static Money operator +(Money left, Money right) => 
         new(left.Amount + right.Amount);
+    public static Money operator -(Money left, Money right) =>
+        Of(left.Amount - right.Amount);
 }

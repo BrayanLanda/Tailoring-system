@@ -136,9 +136,11 @@ public class WorkOrderTests
     }
 
     [Fact]
-    public void DeliverToCustomer_WhenDeliveredByTailor_RecordsTheTimestamp()
+    public void DeliverToCustomer_WhenDeliveredByTailorAndPaid_RecordsTheTimestamp()
     {
         var workOrder = AssignedWorkOrder();
+        workOrder.SetPrice(Money.Of(30000m));
+        workOrder.RegisterPayment(PaymentId.New(), Money.Of(30000m), Now.AddDays(1));
         workOrder.MarkDeliveredByTailor(Now.AddDays(2));
         var deliveredAt = Now.AddDays(3);
 
@@ -185,5 +187,118 @@ public class WorkOrderTests
         workOrder.SetPrice(Money.Of(30000m));
 
         Assert.Equal(Money.Of(30000m), workOrder.Price);
+    }
+
+    private static WorkOrder PricedWorkOrder(decimal price = 30000m)
+    {
+        var workOrder = NewWorkOrder();
+        workOrder.SetPrice(Money.Of(price));
+        return workOrder;
+    }
+
+    [Fact]
+    public void RegisterPayment_WithoutPrice_ThrowsDomainException()
+    {
+        var workOrder = NewWorkOrder();
+
+        Assert.Throws<DomainException>(() =>
+            workOrder.RegisterPayment(PaymentId.New(), Money.Of(10000m), Now));
+    }
+
+    [Fact]
+    public void RegisterPayment_PartialAmount_BecomesPartiallyPaid()
+    {
+        var workOrder = PricedWorkOrder(30000m);
+
+        workOrder.RegisterPayment(PaymentId.New(), Money.Of(10000m), Now);
+
+        Assert.Equal(PaymentStatus.PartiallyPaid, workOrder.PaymentStatus);
+        Assert.Equal(Money.Of(10000m), workOrder.AmountPaid);
+        Assert.Equal(Money.Of(20000m), workOrder.Balance);
+    }
+
+    [Fact]
+    public void RegisterPayment_FullAmount_BecomesPaid()
+    {
+        var workOrder = PricedWorkOrder(30000m);
+
+        workOrder.RegisterPayment(PaymentId.New(), Money.Of(30000m), Now);
+
+        Assert.Equal(PaymentStatus.Paid, workOrder.PaymentStatus);
+        Assert.Equal(Money.Zero, workOrder.Balance);
+    }
+
+    [Fact]
+    public void RegisterPayment_TwoPartialPaymentsThatCompleteThePrice_BecomesPaid()
+    {
+        var workOrder = PricedWorkOrder(30000m);
+
+        workOrder.RegisterPayment(PaymentId.New(), Money.Of(10000m), Now);
+        workOrder.RegisterPayment(PaymentId.New(), Money.Of(20000m), Now.AddDays(2));
+
+        Assert.Equal(PaymentStatus.Paid, workOrder.PaymentStatus);
+        Assert.Equal(2, workOrder.Payments.Count);
+    }
+
+    [Fact]
+    public void RegisterPayment_ExceedingTheBalance_ThrowsDomainException()
+    {
+        var workOrder = PricedWorkOrder(30000m);
+        workOrder.RegisterPayment(PaymentId.New(), Money.Of(20000m), Now);
+
+        Assert.Throws<DomainException>(() =>
+            workOrder.RegisterPayment(PaymentId.New(), Money.Of(15000m), Now));
+    }
+
+    [Fact]
+    public void RegisterPayment_ZeroAmount_ThrowsDomainException()
+    {
+        var workOrder = PricedWorkOrder();
+
+        Assert.Throws<DomainException>(() =>
+            workOrder.RegisterPayment(PaymentId.New(), Money.Zero, Now));
+    }
+
+    [Fact]
+    public void RegisterPayment_SamePaymentIdTwice_IsRegisteredOnlyOnce()
+    {
+        var workOrder = PricedWorkOrder(30000m);
+        var paymentId = PaymentId.New();
+
+        workOrder.RegisterPayment(paymentId, Money.Of(10000m), Now);
+        workOrder.RegisterPayment(paymentId, Money.Of(10000m), Now);
+
+        Assert.Single(workOrder.Payments);
+        Assert.Equal(Money.Of(10000m), workOrder.AmountPaid);
+    }
+
+    [Fact]
+    public void RegisterPayment_BeforeCreationDate_ThrowsDomainException()
+    {
+        var workOrder = PricedWorkOrder();
+
+        Assert.Throws<DomainException>(() =>
+            workOrder.RegisterPayment(PaymentId.New(), Money.Of(10000m), Now.AddHours(-1)));
+    }
+
+    [Fact]
+    public void SetPrice_AfterPaymentsRegistered_ThrowsDomainException()
+    {
+        var workOrder = PricedWorkOrder(30000m);
+        workOrder.RegisterPayment(PaymentId.New(), Money.Of(10000m), Now);
+
+        Assert.Throws<DomainException>(() => workOrder.SetPrice(Money.Of(40000m)));
+    }
+
+    [Fact]
+    public void DeliverToCustomer_WhenNotFullyPaid_ThrowsDomainException()
+    {
+        var workOrder = AssignedWorkOrder();
+        workOrder.SetPrice(Money.Of(30000m));
+        workOrder.RegisterPayment(PaymentId.New(), Money.Of(10000m), Now);
+        workOrder.MarkDeliveredByTailor(Now.AddDays(2));
+
+        Assert.Throws<DomainException>(() =>
+            workOrder.DeliverToCustomer(Now.AddDays(3)));
     }
 }

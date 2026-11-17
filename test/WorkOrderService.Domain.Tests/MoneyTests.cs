@@ -30,4 +30,16 @@ public class MoneyTests
         var total = Money.Of(100m) + Money.Of(50m);
         Assert.Equal(Money.Of(150m), total);
     }
+
+    [Fact]
+    public void Subtract_ReturnsTheDifference()
+    {
+        Assert.Equal(Money.Of(60m), Money.Of(100m) - Money.Of(40m));
+    }
+
+    [Fact]
+    public void Subtract_WhenResultIsNegative_ThrowsDomainException()
+    {
+        Assert.Throws<DomainException>(() => Money.Of(10m) - Money.Of(20m));
+    }
 }
