@@ -22,6 +22,7 @@ public class WorkOrder
     public DateTimeOffset CreatedAt { get; private set; }
     public DateTimeOffset? DeliveredByTailorAt { get; private set; }
     public DateTimeOffset? DeliveredToCustomerAt { get; private set; }
+    public WarrantyCompensation? Compensation { get; private set; }
 
     // Warranty traceability
     public WorkOrderId? OriginalWorkOrderId { get; private set; }
@@ -189,5 +190,25 @@ public class WorkOrder
 
         DeliveredToCustomerAt = deliveredAt;
         Status = WorkStatus.DeliveredToCustomer;
+    }
+
+    public void AuthorizeCompensation(Money amount, string authorizedBy, DateTimeOffset authorizedAt)
+    {
+        if (Type != WorkOrderType.Warranty)
+            throw new DomainException("Only warranties can have a compensation.");
+
+        if (TailorId is null)
+            throw new DomainException("The warranty must be assigned to a tailor before authorizing a compensation.");
+
+        if (OriginalTailorId == TailorId)
+            throw new DomainException("The original tailor fixes their own work without compensation.");
+
+        if (Compensation is not null)
+            throw new DomainException("A compensation has already been authorized for this warranty.");
+
+        if (authorizedAt < CreatedAt)
+            throw new DomainException("Authorization date cannot be before the creation date.");
+
+        Compensation = WarrantyCompensation.Of(amount, authorizedBy, authorizedAt);
     }
 }

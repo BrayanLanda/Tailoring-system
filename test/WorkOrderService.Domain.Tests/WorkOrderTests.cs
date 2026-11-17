@@ -395,6 +395,7 @@ public class WorkOrderTests
 
         warranty.AssignTo(otherTailor, "  Original tailor is on vacation ");
 
+        Assert.Null(warranty.Compensation);
         Assert.Equal(otherTailor, warranty.TailorId);
         Assert.Equal("Original tailor is on vacation", warranty.ReassignmentReason);
     }
@@ -419,5 +420,85 @@ public class WorkOrderTests
         warranty.DeliverToCustomer(Now.AddDays(2));
 
         Assert.Equal(WorkStatus.DeliveredToCustomer, warranty.Status);
+    }
+
+    private static WorkOrder WarrantyDoneByAnotherTailor()
+    {
+        var warranty = NewWarranty(WorkOrderId.New(), new TailorId(Guid.NewGuid()));
+        warranty.AssignTo(new TailorId(Guid.NewGuid()), "Original tailor is on vacation");
+        return warranty;
+    }
+
+    [Fact]
+    public void AuthorizeCompensation_WarrantyDoneByAnotherTailor_RecordsIt()
+    {
+        var warranty = WarrantyDoneByAnotherTailor();
+        var authorizedAt = Now.AddDays(3);
+
+        warranty.AuthorizeCompensation(Money.Of(8000m), "Owner", authorizedAt);
+
+        Assert.NotNull(warranty.Compensation);
+        Assert.Equal(Money.Of(8000m), warranty.Compensation.Amount);
+        Assert.Equal("Owner", warranty.Compensation.AuthorizedBy);
+        Assert.Equal(authorizedAt, warranty.Compensation.AuthorizedAt);
+    }
+
+    [Fact]
+    public void AuthorizeCompensation_OnRegularWorkOrder_ThrowsDomainException()
+    {
+        var workOrder = AssignedWorkOrder();
+
+        Assert.Throws<DomainException>(() =>
+            workOrder.AuthorizeCompensation(Money.Of(8000m), "Owner", Now.AddDays(1)));
+    }
+
+    [Fact]
+    public void AuthorizeCompensation_BeforeAssignment_ThrowsDomainException()
+    {
+        var warranty = NewWarranty();
+
+        Assert.Throws<DomainException>(() =>
+            warranty.AuthorizeCompensation(Money.Of(8000m), "Owner", Now.AddDays(1)));
+    }
+
+    [Fact]
+    public void AuthorizeCompensation_ForTheOriginalTailor_ThrowsDomainException()
+    {
+        var originalTailor = new TailorId(Guid.NewGuid());
+        var warranty = NewWarranty(WorkOrderId.New(), originalTailor);
+        warranty.AssignTo(originalTailor);
+
+        Assert.Throws<DomainException>(() =>
+            warranty.AuthorizeCompensation(Money.Of(8000m), "Owner", Now.AddDays(1)));
+    }
+
+    [Fact]
+    public void AuthorizeCompensation_Twice_ThrowsDomainException()
+    {
+        var warranty = WarrantyDoneByAnotherTailor();
+        warranty.AuthorizeCompensation(Money.Of(8000m), "Owner", Now.AddDays(1));
+
+        Assert.Throws<DomainException>(() =>
+            warranty.AuthorizeCompensation(Money.Of(5000m), "Owner", Now.AddDays(2)));
+    }
+
+    [Fact]
+    public void AuthorizeCompensation_UnlinkedWarranty_IsAllowed()
+    {
+        var warranty = NewWarranty();
+        warranty.AssignTo(new TailorId(Guid.NewGuid()));
+
+        warranty.AuthorizeCompensation(Money.Of(8000m), "Owner", Now.AddDays(1));
+
+        Assert.NotNull(warranty.Compensation);
+    }
+
+    [Fact]
+    public void AuthorizeCompensation_BeforeCreationDate_ThrowsDomainException()
+    {
+        var warranty = WarrantyDoneByAnotherTailor();
+
+        Assert.Throws<DomainException>(() =>
+            warranty.AuthorizeCompensation(Money.Of(8000m), "Owner", Now.AddHours(-1)));
     }
 }
