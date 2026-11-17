@@ -15,7 +15,7 @@ Sistema para gestionar boletas de arreglos de ropa y liquidar a los sastres. Hoy
 
 ## Glosario
 - **Boleta**: documento de recepción de una prenda. Tiene **serial** único, cliente, fecha, prenda y trabajos a realizar, valor (puede ser nulo) y estado.
-- **Garantía**: boleta que vuelve a entrar por un trabajo mal hecho o reclamo. Se registra y se asigna a un sastre como cualquier boleta, pero **nunca cuenta para la liquidación**. Se enlaza a la boleta original.
+- **Garantía**: prenda que vuelve por un trabajo mal hecho o un reclamo. Ver la sección *Garantías*.
 - **Liquidación**: pago al sastre por lo que entregó terminado durante un periodo.
 
 ## Vocabulario del código (inglés)
@@ -56,7 +56,7 @@ Una boleta avanza por dos máquinas de estado separadas. Modelarlas por separado
 
 **Carril de precio/pago**
 `Unpriced → Priced → PartiallyPaid → Paid`
-(enum `PaymentStatus`)
+(enum `PaymentStatus`; las garantías usan `NoCharge`, que significa "sin cobro")
 
 Ejemplos válidos: entregada por el sastre y aún sin pagar; pagada al recibir pero todavía en trabajo.
 
@@ -69,11 +69,23 @@ Ejemplos válidos: entregada por el sastre y aún sin pagar; pagada al recibir p
 - Las fechas entran por parámetro; el dominio nunca llama al reloj del sistema.
 - El sastre puede entregar desde `Assigned` o `InProgress`: `InProgress` es opcional, porque en la práctica recepción no siempre registra que el sastre empezó.
 
+## Garantías
+Problemas reales que el sistema debe mitigar: (1) hoy, si encuentran la boleta original la reutilizan y si no, crean otra que dice "garantía" y sin precio; (2) quien trae la garantía suele ser **otra persona**, y se pierde la trazabilidad de quién dejó la prenda originalmente; (3) la garantía se le da a **cualquier sastre**, lo que genera malestar entre ellos.
+
+Reglas:
+- **Siempre se crea una work order nueva de tipo `Warranty`** (serial propio, ciclo propio), enlazada a la original por `OriginalWorkOrderId`. La original **no se reabre**: queda cerrada y ya liquidada, así no se paga dos veces y su historial no se altera. (En papel hoy se reutiliza la misma boleta; en el sistema eso se reemplaza por el enlace.)
+- Recepción debe poder **buscar la original** por serial, nombre, celular o descripción de la prenda (consulta pendiente en Application).
+- Si no se encuentra la original, se crea la garantía **sin enlace** (`IsLinkedToOriginal = false`). Queda marcada como sin trazabilidad para poder revisarla.
+- En una garantía, `CustomerName`/`CustomerPhone` son los de **quien la trae** (a quien se avisa). El dueño original se consulta por el enlace; no se copia ni se pierde.
+- **Sin cobro**: `PaymentStatus = NoCharge`. No admite `SetPrice` ni `RegisterPayment`, se entrega sin pago y **nunca cuenta en la liquidación**.
+- **Asignación justa**: la garantía debe ir al **sastre original** (`OriginalTailorId`, copiado de la work order original al crearla). Asignarla a otro sastre exige un **motivo** (`ReassignmentReason`) que queda registrado. En una garantía sin enlace no hay sastre original, y no se exige motivo.
+- Objetivo: que quien cometió el error responda por él, y que reasignar sea una decisión visible y no arbitraria. Más adelante: reporte de garantías por sastre.
+
 ## Reglas de precio y pago
 1. El pago puede ocurrir al **dejar** la prenda, al **retirarla**, o cuando se defina el precio.
 2. Una boleta puede crearse **sin precio**; el precio se define después según el trabajo.
 3. Una boleta puede tener **cero, uno o varios pagos** (los pagos son registros aparte, no un campo de la boleta).
-4. **La prenda solo se entrega al cliente cuando está totalmente pagada** (`PaymentStatus = Paid`). `DeliverToCustomer` debe verificarlo.
+4. **La prenda solo se entrega al cliente cuando está totalmente pagada** (`PaymentStatus = Paid`), **excepto las garantías** (`NoCharge`). `DeliverToCustomer` debe verificarlo.
 5. **Existen pagos parciales (abonos)**: el cliente deja una parte y termina de pagar al reclamar la prenda. No siempre ocurre; a veces paga todo de una vez.
 6. Mientras el sastre entrega la prenda a recepción, la boleta puede seguir sin pagar (el pago no bloquea ese paso, solo bloquea la entrega al cliente).
 7. **Decidido**: los pagos son entidades dentro de `WorkOrder` (no hay `PaymentService` por ahora). Un abono no puede superar el saldo pendiente, y el precio **no se puede cambiar** una vez hay abonos.
@@ -116,5 +128,8 @@ Ejemplos válidos: entregada por el sastre y aún sin pagar; pagada al recibir p
 - ¿Es aceptable que haya huecos en la numeración del serial?
 - ¿Una boleta entregada sin precio se paga cuando se define el precio (propuesta actual)?
 - Redondeo del 35 % (a pesos enteros o decimales) y de qué valor se calcula si hubo descuentos o pagos parciales.
-- ¿Una garantía puede asignarse a un sastre distinto del original?
+- Garantías: si otro sastre atiende una garantía que no causó, ¿se le compensa de alguna forma, o su trabajo sigue sin pago?
+- Garantías: ¿solo se pueden abrir sobre boletas ya entregadas al cliente? (lo verificaría Application, no el dominio).
+- Garantías: ¿qué pasa si al revisarla resulta que NO está cubierta? (¿se convierte en trabajo con precio?).
+- ¿Una garantía sobre una garantía se enlaza a la original de la cadena?
 - ¿El sastre puede devolver una prenda sin terminar (reasignación)?

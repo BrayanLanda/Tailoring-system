@@ -301,4 +301,123 @@ public class WorkOrderTests
         Assert.Throws<DomainException>(() =>
             workOrder.DeliverToCustomer(Now.AddDays(3)));
     }
+
+    private static WorkOrder NewWarranty(
+        WorkOrderId? originalWorkOrderId = null,
+        TailorId? originalTailorId = null) =>
+        WorkOrder.CreateWarranty(
+            SerialNumber.From(2), "Pedro Gomez", Phone,
+            "Black pants - hem came undone", Now,
+            originalWorkOrderId, originalTailorId);
+
+    [Fact]
+    public void CreateWarranty_LinkedToOriginal_IsWarrantyWithNoCharge()
+    {
+        var originalId = WorkOrderId.New();
+        var originalTailor = new TailorId(Guid.NewGuid());
+
+        var warranty = NewWarranty(originalId, originalTailor);
+
+        Assert.Equal(WorkOrderType.Warranty, warranty.Type);
+        Assert.Equal(WorkStatus.Received, warranty.Status);
+        Assert.Equal(PaymentStatus.NoCharge, warranty.PaymentStatus);
+        Assert.Null(warranty.Price);
+        Assert.Equal(originalId, warranty.OriginalWorkOrderId);
+        Assert.Equal(originalTailor, warranty.OriginalTailorId);
+        Assert.True(warranty.IsLinkedToOriginal);
+    }
+
+    [Fact]
+    public void CreateWarranty_WithoutOriginal_IsNotLinked()
+    {
+        var warranty = NewWarranty();
+
+        Assert.False(warranty.IsLinkedToOriginal);
+        Assert.Null(warranty.OriginalTailorId);
+    }
+
+    [Fact]
+    public void CreateWarranty_OriginalTailorWithoutOriginalWorkOrder_ThrowsDomainException()
+    {
+        Assert.Throws<DomainException>(() =>
+            NewWarranty(originalWorkOrderId: null, originalTailorId: new TailorId(Guid.NewGuid())));
+    }
+
+    [Fact]
+    public void SetPrice_OnWarranty_ThrowsDomainException()
+    {
+        var warranty = NewWarranty();
+
+        var ex = Assert.Throws<DomainException>(() => warranty.SetPrice(Money.Of(10000m)));
+        Assert.Contains("no charge", ex.Message);
+    }
+
+    [Fact]
+    public void RegisterPayment_OnWarranty_ThrowsDomainException()
+    {
+        var warranty = NewWarranty();
+
+        var ex = Assert.Throws<DomainException>(() =>
+            warranty.RegisterPayment(PaymentId.New(), Money.Of(10000m), Now));
+        Assert.Contains("no charge", ex.Message);
+    }
+
+    [Fact]
+    public void AssignTo_WarrantyToTheOriginalTailor_DoesNotNeedAReason()
+    {
+        var originalTailor = new TailorId(Guid.NewGuid());
+        var warranty = NewWarranty(WorkOrderId.New(), originalTailor);
+
+        warranty.AssignTo(originalTailor);
+
+        Assert.Equal(WorkStatus.Assigned, warranty.Status);
+        Assert.Equal(originalTailor, warranty.TailorId);
+        Assert.Null(warranty.ReassignmentReason);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void AssignTo_WarrantyToAnotherTailorWithoutReason_ThrowsDomainException(string? reason)
+    {
+        var warranty = NewWarranty(WorkOrderId.New(), new TailorId(Guid.NewGuid()));
+
+        Assert.Throws<DomainException>(() =>
+            warranty.AssignTo(new TailorId(Guid.NewGuid()), reason));
+    }
+
+    [Fact]
+    public void AssignTo_WarrantyToAnotherTailorWithReason_RecordsTheReason()
+    {
+        var warranty = NewWarranty(WorkOrderId.New(), new TailorId(Guid.NewGuid()));
+        var otherTailor = new TailorId(Guid.NewGuid());
+
+        warranty.AssignTo(otherTailor, "  Original tailor is on vacation ");
+
+        Assert.Equal(otherTailor, warranty.TailorId);
+        Assert.Equal("Original tailor is on vacation", warranty.ReassignmentReason);
+    }
+
+    [Fact]
+    public void AssignTo_WarrantyWithoutOriginalTailor_AllowsAnyTailorWithoutReason()
+    {
+        var warranty = NewWarranty();
+
+        warranty.AssignTo(new TailorId(Guid.NewGuid()));
+
+        Assert.Equal(WorkStatus.Assigned, warranty.Status);
+    }
+
+    [Fact]
+    public void DeliverToCustomer_Warranty_DoesNotRequirePayment()
+    {
+        var warranty = NewWarranty();
+        warranty.AssignTo(new TailorId(Guid.NewGuid()));
+        warranty.MarkDeliveredByTailor(Now.AddDays(1));
+
+        warranty.DeliverToCustomer(Now.AddDays(2));
+
+        Assert.Equal(WorkStatus.DeliveredToCustomer, warranty.Status);
+    }
 }

@@ -8,10 +8,7 @@ public class WorkOrder
 {
 
     private readonly List<Payment> _payments = [];
-    public IReadOnlyCollection<Payment> Payments => _payments.AsReadOnly();
 
-    public Money AmountPaid => Money.Of(_payments.Sum(p => p.Amount.Amount));
-    public Money? Balance => Price is null ? null : Price - AmountPaid;
     public WorkOrderId Id { get; private set; }
     public SerialNumber SerialNumber { get; private set; } = null!;
     public string CustomerName { get; private set; } = null!;
@@ -20,15 +17,57 @@ public class WorkOrder
     public WorkOrderType Type { get; private set; }
     public WorkStatus Status { get; private set; }
     public TailorId? TailorId { get; private set; }
+    public Money? Price { get; private set; }
+    public PaymentStatus PaymentStatus { get; private set; }
     public DateTimeOffset CreatedAt { get; private set; }
     public DateTimeOffset? DeliveredByTailorAt { get; private set; }
     public DateTimeOffset? DeliveredToCustomerAt { get; private set; }
-    public Money? Price { get; private set; }
-    public PaymentStatus PaymentStatus { get; private set; }
 
+    // Warranty traceability
+    public WorkOrderId? OriginalWorkOrderId { get; private set; }
+    public TailorId? OriginalTailorId { get; private set; }
+    public string? ReassignmentReason { get; private set; }
+    public bool IsLinkedToOriginal => OriginalWorkOrderId is not null;
+
+    public IReadOnlyCollection<Payment> Payments => _payments.AsReadOnly();
+    public Money AmountPaid => Money.Of(_payments.Sum(p => p.Amount.Amount));
+    public Money? Balance => Price is null ? null : Price - AmountPaid;
+
+    // Used by EF Core only. Nobody outside can build an invalid WorkOrder.
     private WorkOrder() { }
 
     public static WorkOrder Create(
+        SerialNumber serialNumber,
+        string customerName,
+        PhoneNumber customerPhone,
+        string garmentDescription,
+        DateTimeOffset createdAt) =>
+        Build(WorkOrderType.Regular, PaymentStatus.Unpriced,
+              serialNumber, customerName, customerPhone, garmentDescription, createdAt);
+
+    public static WorkOrder CreateWarranty(
+        SerialNumber serialNumber,
+        string customerName,
+        PhoneNumber customerPhone,
+        string garmentDescription,
+        DateTimeOffset createdAt,
+        WorkOrderId? originalWorkOrderId = null,
+        TailorId? originalTailorId = null)
+    {
+        if (originalTailorId is not null && originalWorkOrderId is null)
+            throw new DomainException("The original tailor cannot be known without the original work order.");
+
+        var warranty = Build(WorkOrderType.Warranty, PaymentStatus.NoCharge,
+                             serialNumber, customerName, customerPhone, garmentDescription, createdAt);
+
+        warranty.OriginalWorkOrderId = originalWorkOrderId;
+        warranty.OriginalTailorId = originalTailorId;
+        return warranty;
+    }
+
+    private static WorkOrder Build(
+        WorkOrderType type,
+        PaymentStatus paymentStatus,
         SerialNumber serialNumber,
         string customerName,
         PhoneNumber customerPhone,
@@ -48,17 +87,28 @@ public class WorkOrder
             CustomerName = customerName.Trim(),
             CustomerPhone = customerPhone,
             GarmentDescription = garmentDescription.Trim(),
-            Type = WorkOrderType.Regular,
+            Type = type,
             Status = WorkStatus.Received,
-            CreatedAt = createdAt,
-            PaymentStatus = PaymentStatus.Unpriced,
+            PaymentStatus = paymentStatus,
+            CreatedAt = createdAt
         };
     }
 
-    public void AssignTo(TailorId tailorId)
+    public void AssignTo(TailorId tailorId, string? reassignmentReason = null)
     {
         if (Status != WorkStatus.Received)
             throw new DomainException($"Cannot assign a work order in status {Status}.");
+
+        if (Type == WorkOrderType.Warranty
+            && OriginalTailorId is { } originalTailor
+            && originalTailor != tailorId)
+        {
+            if (string.IsNullOrWhiteSpace(reassignmentReason))
+                throw new DomainException(
+                    "A warranty assigned to a different tailor than the original requires a reason.");
+
+            ReassignmentReason = reassignmentReason.Trim();
+        }
 
         TailorId = tailorId;
         Status = WorkStatus.Assigned;
@@ -84,23 +134,11 @@ public class WorkOrder
         Status = WorkStatus.DeliveredByTailor;
     }
 
-    public void DeliverToCustomer(DateTimeOffset deliveredAt)
-    {
-        if (Status != WorkStatus.DeliveredByTailor)
-            throw new DomainException($"Cannot deliver to the customer a work order in status {Status}.");
-
-        if (PaymentStatus != PaymentStatus.Paid)
-            throw new DomainException("The work order must be fully paid before delivering it to the customer.");
-            
-        if (deliveredAt < DeliveredByTailorAt)
-            throw new DomainException("Customer delivery cannot be before the tailor delivery.");
-
-        DeliveredToCustomerAt = deliveredAt;
-        Status = WorkStatus.DeliveredToCustomer;
-    }
-
     public void SetPrice(Money price)
     {
+        if (Type == WorkOrderType.Warranty)
+            throw new DomainException("Warranty work orders have no charge.");
+
         if (PaymentStatus is PaymentStatus.PartiallyPaid or PaymentStatus.Paid)
             throw new DomainException("The price cannot be changed once payments have been registered.");
 
@@ -113,6 +151,10 @@ public class WorkOrder
 
     public void RegisterPayment(PaymentId paymentId, Money amount, DateTimeOffset paidAt)
     {
+        if (Type == WorkOrderType.Warranty)
+            throw new DomainException("Warranty work orders have no charge.");
+
+        // Idempotent: a retried request with the same id is ignored.
         if (_payments.Any(p => p.Id == paymentId))
             return;
 
@@ -132,5 +174,20 @@ public class WorkOrder
         PaymentStatus = AmountPaid.Amount == price.Amount
             ? PaymentStatus.Paid
             : PaymentStatus.PartiallyPaid;
+    }
+
+    public void DeliverToCustomer(DateTimeOffset deliveredAt)
+    {
+        if (Status != WorkStatus.DeliveredByTailor)
+            throw new DomainException($"Cannot deliver to the customer a work order in status {Status}.");
+
+        if (PaymentStatus is not (PaymentStatus.Paid or PaymentStatus.NoCharge))
+            throw new DomainException("The work order must be fully paid before delivering it to the customer.");
+
+        if (deliveredAt < DeliveredByTailorAt)
+            throw new DomainException("Customer delivery cannot be before the tailor delivery.");
+
+        DeliveredToCustomerAt = deliveredAt;
+        Status = WorkStatus.DeliveredToCustomer;
     }
 }

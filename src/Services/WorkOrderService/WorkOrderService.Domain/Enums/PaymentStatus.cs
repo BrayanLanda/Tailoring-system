@@ -5,5 +5,6 @@ public enum PaymentStatus
     Unpriced = 1,
     Priced = 2,
     PartiallyPaid = 3,
-    Paid = 4
+    Paid = 4,
+    NoCharge = 5
 }
