@@ -25,6 +25,7 @@ El negocio se explica en español, pero **todo identificador en código, BD, API
 |---|---|
 | Boleta | `WorkOrder` |
 | Serial de la boleta | `SerialNumber` |
+| Compensación de garantía | `WarrantyCompensation` |
 | Garantía | `Warranty` (una `WorkOrder` con `Type = Warranty`, enlazada por `OriginalWorkOrderId`) |
 | Prenda | `Garment` |
 | Trabajo / arreglo | `AlterationJob` |
@@ -77,8 +78,12 @@ Reglas:
 - Recepción debe poder **buscar la original** por serial, nombre, celular o descripción de la prenda (consulta pendiente en Application).
 - Si no se encuentra la original, se crea la garantía **sin enlace** (`IsLinkedToOriginal = false`). Queda marcada como sin trazabilidad para poder revisarla.
 - En una garantía, `CustomerName`/`CustomerPhone` son los de **quien la trae** (a quien se avisa). El dueño original se consulta por el enlace; no se copia ni se pierde.
-- **Sin cobro**: `PaymentStatus = NoCharge`. No admite `SetPrice` ni `RegisterPayment`, se entrega sin pago y **nunca cuenta en la liquidación**.
+- **Sin cobro al cliente**: `PaymentStatus = NoCharge`. No admite `SetPrice` ni `RegisterPayment` y se entrega sin pago. **No cuenta como trabajo regular en la liquidación** (no genera el 35 %).
 - **Asignación justa**: la garantía debe ir al **sastre original** (`OriginalTailorId`, copiado de la work order original al crearla). Asignarla a otro sastre exige un **motivo** (`ReassignmentReason`) que queda registrado. En una garantía sin enlace no hay sastre original, y no se exige motivo.
+- **Una garantía no le genera pago a ningún sastre por sí sola, ni siquiera al reasignarla.** Solo se paga una **compensación autorizada** explícitamente por el dueño (`WarrantyCompensation`: monto, quién autoriza, cuándo). Si nadie la autoriza, el sastre no se anota nada. Esto ataca la pérdida actual: hoy a veces el sastre se anota la garantía en su cuaderno aunque nadie se lo haya dicho.
+  - Solo se autoriza si la garantía ya está asignada a un sastre, y **no** si ese sastre es el original (arregla su propio trabajo). Una sola compensación por garantía.
+  - Solo el dueño/admin puede autorizar: Application verifica el rol y el dominio guarda quién autorizó.
+  - La liquidación se calcula **solo con lo que está en el sistema**; si el dueño sigue pagando desde un cuaderno, el sistema no puede evitar la pérdida.
 - Objetivo: que quien cometió el error responda por él, y que reasignar sea una decisión visible y no arbitraria. Más adelante: reporte de garantías por sastre.
 
 ## Reglas de precio y pago
@@ -107,7 +112,7 @@ Reglas:
 
 ### Una boleta es elegible si cumple las tres
 1. `WorkStatus = DeliveredByTailor`.
-2. **No** es garantía.
+2. **No** es garantía (las garantías solo aportan su compensación autorizada, ver *Garantías*).
 3. **No** ha sido liquidada antes (evita pagar dos veces).
 
 ### Casos borde
@@ -118,7 +123,7 @@ Reglas:
 | Dos cierres simultáneos | Solo uno procede (bloqueo distribuido en Redis) |
 | Entrega justo durante el cierre | Cuenta si su marca de tiempo es anterior a la del cierre |
 | Entregada sin precio al cerrar | No se liquida; queda pendiente hasta tener precio (propuesta, ver pendientes) |
-| Garantía entregada | Se registra pero aporta 0 a la liquidación |
+| Garantía entregada | Aporta 0, salvo que exista una compensación autorizada (entra una sola vez) |
 
 - Una liquidación cerrada es **inmutable** (snapshot): líneas, valores, porcentaje y marca de cierre no se editan. Las correcciones se hacen con ajustes en la liquidación siguiente.
 
@@ -128,7 +133,7 @@ Reglas:
 - ¿Es aceptable que haya huecos en la numeración del serial?
 - ¿Una boleta entregada sin precio se paga cuando se define el precio (propuesta actual)?
 - Redondeo del 35 % (a pesos enteros o decimales) y de qué valor se calcula si hubo descuentos o pagos parciales.
-- Garantías: si otro sastre atiende una garantía que no causó, ¿se le compensa de alguna forma, o su trabajo sigue sin pago?
+- Compensación de garantía: cuando el dueño dice "anótese $X", ¿X es lo que recibe el sastre, o el valor sobre el que se calcula el 35 %?
 - Garantías: ¿solo se pueden abrir sobre boletas ya entregadas al cliente? (lo verificaría Application, no el dominio).
 - Garantías: ¿qué pasa si al revisarla resulta que NO está cubierta? (¿se convierte en trabajo con precio?).
 - ¿Una garantía sobre una garantía se enlaza a la original de la cadena?
