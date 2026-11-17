@@ -20,8 +20,6 @@ public class WorkOrderTests
         return workOrder;
     }
 
-    // ---------- Create ----------
-
     [Fact]
     public void Create_ValidData_StartsAsReceivedAndRegular()
     {
@@ -33,6 +31,8 @@ public class WorkOrderTests
         Assert.Equal(Phone, workOrder.CustomerPhone);
         Assert.Equal(Now, workOrder.CreatedAt);
         Assert.Null(workOrder.TailorId);
+        Assert.Equal(PaymentStatus.Unpriced, workOrder.PaymentStatus);
+        Assert.Null(workOrder.Price);
     }
 
     [Theory]
@@ -76,8 +76,6 @@ public class WorkOrderTests
             workOrder.AssignTo(new TailorId(Guid.NewGuid())));
     }
 
-    // ---------- StartWork ----------
-
     [Fact]
     public void StartWork_WhenAssigned_BecomesInProgress()
     {
@@ -95,8 +93,6 @@ public class WorkOrderTests
 
         Assert.Throws<DomainException>(() => workOrder.StartWork());
     }
-
-    // ---------- MarkDeliveredByTailor ----------
 
     [Fact]
     public void MarkDeliveredByTailor_FromAssigned_RecordsTheTimestamp()
@@ -139,8 +135,6 @@ public class WorkOrderTests
             workOrder.MarkDeliveredByTailor(Now.AddHours(-1)));
     }
 
-    // ---------- DeliverToCustomer ----------
-
     [Fact]
     public void DeliverToCustomer_WhenDeliveredByTailor_RecordsTheTimestamp()
     {
@@ -161,5 +155,35 @@ public class WorkOrderTests
 
         Assert.Throws<DomainException>(() =>
             workOrder.DeliverToCustomer(Now.AddDays(3)));
+    }
+
+    [Fact]
+    public void SetPrice_ValidAmount_BecomesPriced()
+    {
+        var workOrder = NewWorkOrder();
+
+        workOrder.SetPrice(Money.Of(25000m));
+
+        Assert.Equal(Money.Of(25000m), workOrder.Price);
+        Assert.Equal(PaymentStatus.Priced, workOrder.PaymentStatus);
+    }
+
+    [Fact]
+    public void SetPrice_Zero_ThrowsDomainException()
+    {
+        var workOrder = NewWorkOrder();
+
+        Assert.Throws<DomainException>(() => workOrder.SetPrice(Money.Zero));
+    }
+
+    [Fact]
+    public void SetPrice_CanBeCorrectedWhileStillPriced()
+    {
+        var workOrder = NewWorkOrder();
+        workOrder.SetPrice(Money.Of(20000m));
+
+        workOrder.SetPrice(Money.Of(30000m));
+
+        Assert.Equal(Money.Of(30000m), workOrder.Price);
     }
 }

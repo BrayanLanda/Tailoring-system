@@ -17,6 +17,8 @@ public class WorkOrder
     public DateTimeOffset CreatedAt { get; private set; }
     public DateTimeOffset? DeliveredByTailorAt { get; private set; }
     public DateTimeOffset? DeliveredToCustomerAt { get; private set; }
+    public Money? Price { get; private set; }
+    public PaymentStatus PaymentStatus { get; private set; }
 
     private WorkOrder() { }
 
@@ -42,7 +44,8 @@ public class WorkOrder
             GarmentDescription = garmentDescription.Trim(),
             Type = WorkOrderType.Regular,
             Status = WorkStatus.Received,
-            CreatedAt = createdAt
+            CreatedAt = createdAt,
+            PaymentStatus = PaymentStatus.Unpriced,
         };
     }
 
@@ -86,4 +89,14 @@ public class WorkOrder
         DeliveredToCustomerAt = deliveredAt;
         Status = WorkStatus.DeliveredToCustomer;
     }
+
+    public void SetPrice(Money price)
+    {
+        if(price.Amount <= 0)
+            throw new DomainException("Price must be greater than zero");
+
+        Price = price;
+        PaymentStatus = PaymentStatus.Priced;
+    }
+
 }

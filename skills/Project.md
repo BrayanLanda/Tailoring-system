@@ -26,7 +26,7 @@ src/Services/WorkOrderService/
 ├── WorkOrderService.Application/      # casos de uso (commands/queries + handlers), DTOs, puertos
 ├── WorkOrderService.Infrastructure/   # EF Core, DbContext, repositorios, outbox, consumidores, Redis
 └── WorkOrderService.Api/              # Program.cs, endpoints, DI, health checks, Dockerfile
-tests/
+test/
 ├── WorkOrderService.Domain.Tests/
 └── WorkOrderService.Application.Tests/
 ```
@@ -42,13 +42,22 @@ tests/
    - **Un agregado referencia a otro solo por ID** (`WorkOrderId`, `TailorId`), nunca por objeto.
 3. **Modelo rico, no anémico**: las reglas viven en el agregado. Nada de `workOrder.Status = ...` desde fuera; se usan métodos con intención (`workOrder.AssignTo(tailorId)`, `workOrder.MarkDeliveredByTailor()`) que validan la transición y lanzan una excepción de dominio si es ilegal.
 4. **Constructores protegidos**: las entidades se crean con *factory methods* estáticos (`WorkOrder.Create(...)`) que dejan el objeto siempre válido. Setters `private`. EF Core usa un constructor privado sin parámetros.
-5. **Value objects** inmutables (`record`) para conceptos sin identidad: `Money`, `SerialNumber`, `Percentage`. Se validan al crearse. El dinero nunca es un `decimal` suelto en el dominio.
+5. **Value objects** inmutables (`record`) para conceptos sin identidad: `Money`, `SerialNumber`, `PhoneNumber`, `Percentage`. Se validan al crearse. El dinero nunca es un `decimal` suelto en el dominio.
 6. **Identificadores tipados** (`WorkOrderId`, `TailorId`) en vez de `Guid` sueltos, para no mezclarlos.
 7. **Domain events** (ej. `WorkOrderCreated`) los levanta el agregado en una lista interna. Se despachan al guardar. **No son lo mismo** que los *integration events* de `Contracts`: el handler de Application traduce un domain event a un integration event y lo publica por el outbox.
 8. **Repositorios**: una interfaz por agregado raíz, definida en `Domain`, implementada en `Infrastructure`. Solo cargan y guardan agregados completos.
 9. **Domain services / policies** para reglas que no pertenecen a una sola entidad (ej. `SettlementEligibilityPolicy`: qué work orders entran a una liquidación).
 10. **Application**: un caso de uso = un handler (`CreateWorkOrderHandler`). Orquesta: carga el agregado, ejecuta el método de dominio, guarda. Sin lógica de negocio. Empezamos con handlers propios, sin MediatR (ahora tiene licencia comercial); se puede revisar más adelante.
 11. Las **consultas (lectura)** pueden saltarse el dominio y leer con proyecciones directas a DTOs, para no cargar agregados completos solo para mostrar listas.
+
+12. **Convenciones de dominio ya establecidas**:
+    - `DomainException` (en `Domain/Exceptions`) para toda regla de negocio violada.
+    - Value objects: `Of(...)` crea un valor desde cero y normaliza (ej. `PhoneNumber.Of`); `From(...)` reconstruye un dato que ya existe, como el serial asignado por la BD (`SerialNumber.From`).
+    - Identificadores tipados como `readonly record struct`; los del propio servicio usan `Guid.CreateVersion7()`. El ID de un agregado ajeno (ej. `TailorId`) **no** tiene `New()`.
+    - **El dominio nunca llama al reloj** (`DateTime.UtcNow`): las fechas entran por parámetro, así las pruebas son exactas.
+    - Los enums empiezan en `1`, para que el `0` por defecto nunca sea un estado válido.
+    - Los campos de fecha de hitos importantes (ej. `DeliveredByTailorAt`) se guardan en el agregado; la liquidación depende de ellos.
+13. **TDD**: cada regla nueva empieza con una prueba que falla (rojo), luego el mínimo código para que pase (verde). Comprobar siempre que la prueba falla antes de escribir el código.
 
 ## Pasos para crear un servicio
 1. Crear los cuatro proyectos (`Api` con `dotnet new webapi`, el resto con `dotnet new classlib`), agregarlos a la solución y configurar las referencias según la regla de dependencias.
