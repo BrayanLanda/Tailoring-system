@@ -28,7 +28,7 @@ El negocio se explica en español, pero **todo identificador en código, BD, API
 | Compensación de garantía | `WarrantyCompensation` |
 | Garantía | `Warranty` (una `WorkOrder` con `Type = Warranty`, enlazada por `OriginalWorkOrderId`) |
 | Prenda | `Garment` |
-| Trabajo / arreglo | `AlterationJob` |
+| Trabajo / arreglo | `AlterationJob` (value object: descripción y cantidad) |
 | Cliente | `Customer` (en la work order: `CustomerName` y `CustomerPhone`) |
 | Sastre | `Tailor` |
 | Recepción / recepcionista | `Receptionist` |
@@ -42,7 +42,7 @@ El negocio se explica en español, pero **todo identificador en código, BD, API
 ## Agregados previstos (DDD)
 | Servicio | Agregado raíz | Contiene |
 |---|---|---|
-| WorkOrderService | `WorkOrder` | `AlterationJob`, `Payment` (abonos), estados de trabajo y de pago |
+| WorkOrderService | `WorkOrder` | `AlterationJob` (value objects), `Payment` (abonos), estados de trabajo y de pago |
 | TailorService | `Tailor` | datos del sastre y su disponibilidad |
 | SettlementService | `Settlement` | `SettlementLine`, periodo, porcentaje usado |
 
@@ -70,6 +70,13 @@ Ejemplos válidos: entregada por el sastre y aún sin pagar; pagada al recibir p
 - Las fechas entran por parámetro; el dominio nunca llama al reloj del sistema.
 - El sastre puede entregar desde `Assigned` o `InProgress`: `InProgress` es opcional, porque en la práctica recepción no siempre registra que el sastre empezó.
 
+## Trabajos de la boleta
+- La boleta trae un **valor total**; **no se discrimina el precio por trabajo** (ej. "3 ruedos y 2 costuras" con un solo valor total).
+- Los trabajos son **descriptivos**: cada `AlterationJob` tiene descripción y cantidad (ej. `Hem` x3, `Seam` x2), sin precio propio. Son value objects.
+- Una boleta tiene **al menos un trabajo**. `GarmentDescription` describe la prenda; los trabajos describen lo que hay que hacerle. Las garantías también llevan sus trabajos.
+- Los trabajos no afectan la liquidación (esta usa el valor total).
+- Por ahora la descripción es texto libre; un catálogo de tipos de trabajo queda pendiente.
+
 ## Garantías
 Problemas reales que el sistema debe mitigar: (1) hoy, si encuentran la boleta original la reutilizan y si no, crean otra que dice "garantía" y sin precio; (2) quien trae la garantía suele ser **otra persona**, y se pierde la trazabilidad de quién dejó la prenda originalmente; (3) la garantía se le da a **cualquier sastre**, lo que genera malestar entre ellos.
 
@@ -82,6 +89,7 @@ Reglas:
 - **Asignación justa**: la garantía debe ir al **sastre original** (`OriginalTailorId`, copiado de la work order original al crearla). Asignarla a otro sastre exige un **motivo** (`ReassignmentReason`) que queda registrado. En una garantía sin enlace no hay sastre original, y no se exige motivo.
 - **Una garantía no le genera pago a ningún sastre por sí sola, ni siquiera al reasignarla.** Solo se paga una **compensación autorizada** explícitamente por el dueño (`WarrantyCompensation`: monto, quién autoriza, cuándo). Si nadie la autoriza, el sastre no se anota nada. Esto ataca la pérdida actual: hoy a veces el sastre se anota la garantía en su cuaderno aunque nadie se lo haya dicho.
   - Solo se autoriza si la garantía ya está asignada a un sastre, y **no** si ese sastre es el original (arregla su propio trabajo). Una sola compensación por garantía.
+  - **El monto autorizado es el valor que el sastre se anota; el sastre recibe el 35 % de ese valor** (el mismo porcentaje que en el trabajo regular). Ejemplo: el dueño autoriza $8.000 → el sastre recibe $2.800. En `WarrantyCompensation`, `Amount` es ese valor base, no el pago final.
   - Solo el dueño/admin puede autorizar: Application verifica el rol y el dominio guarda quién autorizó.
   - La liquidación se calcula **solo con lo que está en el sistema**; si el dueño sigue pagando desde un cuaderno, el sistema no puede evitar la pérdida.
 - Objetivo: que quien cometió el error responda por él, y que reasignar sea una decisión visible y no arbitraria. Más adelante: reporte de garantías por sastre.
@@ -104,11 +112,14 @@ Reglas:
 - Las secuencias de PostgreSQL garantizan unicidad pero **pueden dejar huecos** (por ejemplo, si una transacción se revierte). Si el negocio exige numeración sin saltos, habría que cambiar de estrategia.
 
 ## Liquidación al sastre
-- El sastre recibe **35 % del valor** de sus boletas elegibles. El porcentaje es **configurable** (hoy 35) y cada línea de liquidación **guarda el porcentaje usado**.
+- El sastre recibe **35 % del valor** de sus boletas elegibles **y de sus compensaciones de garantía autorizadas** (en estas, el valor es el monto autorizado). El porcentaje es **configurable** (hoy 35) y cada línea de liquidación **guarda el porcentaje usado**.
 - **No hay semanas ni fechas fijas.** Hay un **periodo abierto** que se cierra **manualmente** ("Cerrar liquidación"). Lo habitual es cerrar el sábado hacia el mediodía, pero el sistema no depende de eso.
 - Mientras el periodo esté abierto, toda boleta elegible entra en él (aunque se registre el mismo sábado antes de cerrar).
 - Lo registrado **después** del instante del cierre cae en el periodo siguiente (ejemplo: cierre 12:00, entrega 13:00 → siguiente liquidación).
 - Al cerrar se abre un periodo nuevo.
+
+### Una compensación de garantía es elegible si
+Está autorizada (`Compensation` presente) y aún no ha sido liquidada. Su valor es `Compensation.Amount`; entra una sola vez.
 
 ### Una boleta es elegible si cumple las tres
 1. `WorkStatus = DeliveredByTailor`.
@@ -128,12 +139,13 @@ Reglas:
 - Una liquidación cerrada es **inmutable** (snapshot): líneas, valores, porcentaje y marca de cierre no se editan. Las correcciones se hacen con ajustes en la liquidación siguiente.
 
 ## Pendientes de confirmar con el usuario
+- ¿Una boleta puede traer varias prendas (ej. 3 pantalones), o es una prenda por boleta?
+- ¿Se quiere un catálogo de tipos de trabajo (ruedo, costura, cremallera...) para estandarizar y sacar reportes?
 - Medio de pago (efectivo, transferencia...): ¿hay que registrarlo?
 - ¿Cómo se relacionan el número impreso en el talonario físico y el serial del sistema? (¿el sistema imprime la boleta/etiqueta, o se guarda el número del papel como referencia opcional `PaperReference`?). Sin esto, el cliente y el sastre podrían ver un número distinto al del sistema.
 - ¿Es aceptable que haya huecos en la numeración del serial?
 - ¿Una boleta entregada sin precio se paga cuando se define el precio (propuesta actual)?
 - Redondeo del 35 % (a pesos enteros o decimales) y de qué valor se calcula si hubo descuentos o pagos parciales.
-- Compensación de garantía: cuando el dueño dice "anótese $X", ¿X es lo que recibe el sastre, o el valor sobre el que se calcula el 35 %?
 - Garantías: ¿solo se pueden abrir sobre boletas ya entregadas al cliente? (lo verificaría Application, no el dominio).
 - Garantías: ¿qué pasa si al revisarla resulta que NO está cubierta? (¿se convierte en trabajo con precio?).
 - ¿Una garantía sobre una garantía se enlaza a la original de la cadena?

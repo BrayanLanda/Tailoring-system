@@ -8,6 +8,8 @@ public class WorkOrder
 {
 
     private readonly List<Payment> _payments = [];
+    private readonly List<AlterationJob> _jobs = [];
+    public IReadOnlyList<AlterationJob> Jobs => _jobs.AsReadOnly();
 
     public WorkOrderId Id { get; private set; }
     public SerialNumber SerialNumber { get; private set; } = null!;
@@ -38,19 +40,21 @@ public class WorkOrder
     private WorkOrder() { }
 
     public static WorkOrder Create(
-        SerialNumber serialNumber,
-        string customerName,
-        PhoneNumber customerPhone,
-        string garmentDescription,
-        DateTimeOffset createdAt) =>
-        Build(WorkOrderType.Regular, PaymentStatus.Unpriced,
-              serialNumber, customerName, customerPhone, garmentDescription, createdAt);
+       SerialNumber serialNumber,
+       string customerName,
+       PhoneNumber customerPhone,
+       string garmentDescription,
+       IEnumerable<AlterationJob> jobs,
+       DateTimeOffset createdAt) =>
+       Build(WorkOrderType.Regular, PaymentStatus.Unpriced,
+             serialNumber, customerName, customerPhone, garmentDescription, jobs, createdAt);
 
     public static WorkOrder CreateWarranty(
         SerialNumber serialNumber,
         string customerName,
         PhoneNumber customerPhone,
         string garmentDescription,
+        IEnumerable<AlterationJob> jobs,
         DateTimeOffset createdAt,
         WorkOrderId? originalWorkOrderId = null,
         TailorId? originalTailorId = null)
@@ -59,7 +63,7 @@ public class WorkOrder
             throw new DomainException("The original tailor cannot be known without the original work order.");
 
         var warranty = Build(WorkOrderType.Warranty, PaymentStatus.NoCharge,
-                             serialNumber, customerName, customerPhone, garmentDescription, createdAt);
+                             serialNumber, customerName, customerPhone, garmentDescription, jobs, createdAt);
 
         warranty.OriginalWorkOrderId = originalWorkOrderId;
         warranty.OriginalTailorId = originalTailorId;
@@ -73,6 +77,7 @@ public class WorkOrder
         string customerName,
         PhoneNumber customerPhone,
         string garmentDescription,
+        IEnumerable<AlterationJob> jobs,
         DateTimeOffset createdAt)
     {
         if (string.IsNullOrWhiteSpace(customerName))
@@ -81,7 +86,11 @@ public class WorkOrder
         if (string.IsNullOrWhiteSpace(garmentDescription))
             throw new DomainException("Garment description is required.");
 
-        return new WorkOrder
+        var jobList = jobs.ToList();
+        if (jobList.Count == 0)
+            throw new DomainException("At least one job is required.");
+
+        var workOrder = new WorkOrder
         {
             Id = WorkOrderId.New(),
             SerialNumber = serialNumber,
@@ -93,6 +102,9 @@ public class WorkOrder
             PaymentStatus = paymentStatus,
             CreatedAt = createdAt
         };
+
+        workOrder._jobs.AddRange(jobList);
+        return workOrder;
     }
 
     public void AssignTo(TailorId tailorId, string? reassignmentReason = null)

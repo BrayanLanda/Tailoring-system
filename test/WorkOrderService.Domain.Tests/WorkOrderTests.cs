@@ -9,10 +9,11 @@ public class WorkOrderTests
 {
     private static readonly DateTimeOffset Now = new(2026, 11, 16, 12, 0, 0, TimeSpan.Zero);
     private static readonly PhoneNumber Phone = PhoneNumber.Of("300 123 4567");
+    private static readonly AlterationJob[] SampleJobs =
+   [AlterationJob.Of("Hem", 3), AlterationJob.Of("Seam", 2)];
 
     private static WorkOrder NewWorkOrder() =>
-        WorkOrder.Create(SerialNumber.From(1), "Maria Lopez", Phone, "Black pants - hem", Now);
-
+    WorkOrder.Create(SerialNumber.From(1), "Maria Lopez", Phone, "Black pants", SampleJobs, Now);
     private static WorkOrder AssignedWorkOrder()
     {
         var workOrder = NewWorkOrder();
@@ -33,6 +34,7 @@ public class WorkOrderTests
         Assert.Null(workOrder.TailorId);
         Assert.Equal(PaymentStatus.Unpriced, workOrder.PaymentStatus);
         Assert.Null(workOrder.Price);
+        Assert.Equal(SampleJobs, workOrder.Jobs.ToArray());
     }
 
     [Theory]
@@ -41,7 +43,7 @@ public class WorkOrderTests
     public void Create_EmptyCustomerName_ThrowsDomainException(string customerName)
     {
         Assert.Throws<DomainException>(() =>
-            WorkOrder.Create(SerialNumber.From(1), customerName, Phone, "Pants", Now));
+            WorkOrder.Create(SerialNumber.From(1), customerName, Phone, "Pants", SampleJobs, Now));
     }
 
     [Theory]
@@ -50,10 +52,8 @@ public class WorkOrderTests
     public void Create_EmptyGarmentDescription_ThrowsDomainException(string garment)
     {
         Assert.Throws<DomainException>(() =>
-            WorkOrder.Create(SerialNumber.From(1), "Maria Lopez", Phone, garment, Now));
+            WorkOrder.Create(SerialNumber.From(1), "Maria Lopez", Phone, garment, SampleJobs, Now));
     }
-
-    // ---------- AssignTo ----------
 
     [Fact]
     public void AssignTo_WhenReceived_BecomesAssigned()
@@ -303,12 +303,12 @@ public class WorkOrderTests
     }
 
     private static WorkOrder NewWarranty(
-        WorkOrderId? originalWorkOrderId = null,
-        TailorId? originalTailorId = null) =>
-        WorkOrder.CreateWarranty(
-            SerialNumber.From(2), "Pedro Gomez", Phone,
-            "Black pants - hem came undone", Now,
-            originalWorkOrderId, originalTailorId);
+     WorkOrderId? originalWorkOrderId = null,
+     TailorId? originalTailorId = null) =>
+     WorkOrder.CreateWarranty(
+         SerialNumber.From(2), "Pedro Gomez", Phone,
+         "Black pants - hem came undone", SampleJobs, Now,
+         originalWorkOrderId, originalTailorId);
 
     [Fact]
     public void CreateWarranty_LinkedToOriginal_IsWarrantyWithNoCharge()
@@ -500,5 +500,19 @@ public class WorkOrderTests
 
         Assert.Throws<DomainException>(() =>
             warranty.AuthorizeCompensation(Money.Of(8000m), "Owner", Now.AddHours(-1)));
+    }
+
+    [Fact]
+    public void Create_WithoutJobs_ThrowsDomainException()
+    {
+        Assert.Throws<DomainException>(() =>
+            WorkOrder.Create(SerialNumber.From(1), "Maria Lopez", Phone, "Black pants", [], Now));
+    }
+
+    [Fact]
+    public void CreateWarranty_WithoutJobs_ThrowsDomainException()
+    {
+        Assert.Throws<DomainException>(() =>
+            WorkOrder.CreateWarranty(SerialNumber.From(2), "Pedro Gomez", Phone, "Black pants", [], Now));
     }
 }

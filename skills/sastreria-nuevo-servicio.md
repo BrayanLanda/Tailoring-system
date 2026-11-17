@@ -38,12 +38,12 @@ test/
 ## Reglas de DDD
 1. **Lenguaje ubicuo**: las clases usan el vocabulario en inglés de `sastreria-dominio` (`WorkOrder`, `Tailor`, `Settlement`...). Si el negocio cambia un término, se cambia en el código.
 2. **Agregados**: un agregado es un límite de consistencia y de transacción. Una transacción modifica **un solo agregado**. Se accede a sus partes internas solo por la raíz.
-   - `WorkOrder` (raíz; contiene sus `AlterationJob` y sus `Payment`), `Tailor`, `Settlement` (raíz; contiene `SettlementLine`).
+   - `WorkOrder` (raíz; contiene sus `AlterationJob` como value objects y sus `Payment` como entidades), `Tailor`, `Settlement` (raíz; contiene `SettlementLine`).
    - **Los pagos viven dentro de `WorkOrder`**: "no se entrega hasta pagar" es un invariante y necesita consistencia inmediata. Solo se separaría un `PaymentService` si aparecen cierre de caja, devoluciones, medios de pago/pasarelas, varias sedes o reportes financieros; en ese caso se alimentaría con eventos de `WorkOrderService`.
    - **Un agregado referencia a otro solo por ID** (`WorkOrderId`, `TailorId`), nunca por objeto.
 3. **Modelo rico, no anémico**: las reglas viven en el agregado. Nada de `workOrder.Status = ...` desde fuera; se usan métodos con intención (`workOrder.AssignTo(tailorId)`, `workOrder.MarkDeliveredByTailor()`) que validan la transición y lanzan una excepción de dominio si es ilegal.
 4. **Constructores protegidos**: las entidades se crean con *factory methods* estáticos (`WorkOrder.Create(...)`) que dejan el objeto siempre válido. Setters `private`. EF Core usa un constructor privado sin parámetros.
-5. **Value objects** inmutables (`record`) para conceptos sin identidad: `Money`, `SerialNumber`, `PhoneNumber`, `Percentage`. Se validan al crearse. El dinero nunca es un `decimal` suelto en el dominio.
+5. **Value objects** inmutables (`record`) para conceptos sin identidad: `Money`, `SerialNumber`, `PhoneNumber`, `AlterationJob`, `WarrantyCompensation`, `Percentage`. Se validan al crearse. El dinero nunca es un `decimal` suelto en el dominio.
 6. **Identificadores tipados** (`WorkOrderId`, `TailorId`) en vez de `Guid` sueltos, para no mezclarlos.
 7. **Domain events** (ej. `WorkOrderCreated`) los levanta el agregado en una lista interna. Se despachan al guardar. **No son lo mismo** que los *integration events* de `Contracts`: el handler de Application traduce un domain event a un integration event y lo publica por el outbox.
 8. **Repositorios**: una interfaz por agregado raíz, definida en `Domain`, implementada en `Infrastructure`. Solo cargan y guardan agregados completos.
