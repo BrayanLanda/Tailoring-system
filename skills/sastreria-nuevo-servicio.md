@@ -63,6 +63,14 @@ test/
     - Los campos de fecha de hitos importantes (ej. `DeliveredByTailorAt`) se guardan en el agregado; la liquidación depende de ellos.
 13. **TDD**: cada regla nueva empieza con una prueba que falla (rojo), luego el mínimo código para que pase (verde). Comprobar siempre que la prueba falla antes de escribir el código.
 
+14. **Application (casos de uso)**:
+    - Una carpeta por caso de uso: `Application/WorkOrders/CreateWorkOrder/` con `Command` (record), `Handler` (método `HandleAsync`) y `Result` (record).
+    - **Puertos**: `IWorkOrderRepository` (`Domain/Repositories`) e `ISerialNumberGenerator` (`Domain/Services`) viven en `Domain`; `IUnitOfWork` vive en `Application/Abstractions`. Infrastructure los implementa.
+    - La hora se pide con `TimeProvider` (nunca `DateTime.UtcNow`) y el handler se la pasa al agregado.
+    - El handler convierte los datos primitivos a value objects **antes** de pedir recursos con efecto (ej. el serial), para no gastar números por entradas inválidas.
+    - El handler orquesta (cargar, ejecutar el método del agregado, guardar); **no contiene reglas de negocio**.
+    - Pruebas de handlers con **fakes escritos a mano** en `test/<Service>.Application.Tests/Fakes/` (repositorio en memoria, serial secuencial, unit of work contador, `TimeProvider` fijo). No se usan librerías de mocks.
+
 ## Pasos para crear un servicio
 1. Crear los cuatro proyectos (`Api` con `dotnet new webapi`, el resto con `dotnet new classlib`), agregarlos a la solución y configurar las referencias según la regla de dependencias.
 2. Borrar de cada `.csproj` lo que ya define `Directory.Build.props` (`TargetFramework`, `Nullable`, `ImplicitUsings`) y quitar `Class1.cs`.
