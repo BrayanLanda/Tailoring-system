@@ -11,5 +11,6 @@
   </Folder>
   <Folder Name="/test/">
     <Project Path="test/WorkOrderService.Domain.Tests/WorkOrderService.Domain.Tests.csproj" />
+    <Project Path="test/WorkOrderService.Application.Tests/WorkOrderService.Application.Tests.csproj" />
   </Folder>
 </Solution>
