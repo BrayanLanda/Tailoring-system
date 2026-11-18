@@ -22,6 +22,8 @@ namespace WorkOrderService.Infrastructure.Persistence.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.HasSequence("work_order_serial_number");
+
             modelBuilder.Entity("WorkOrderService.Domain.Entities.WorkOrder", b =>
                 {
                     b.Property<Guid>("Id")
