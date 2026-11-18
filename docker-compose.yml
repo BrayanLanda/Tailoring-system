@@ -1,0 +1,20 @@
+services:
+  work-order-db:
+    image: postgres:17
+    container_name: sastreria-work-order-db
+    environment:
+      POSTGRES_USER: ${WORK_ORDER_DB_USER:-sastreria}
+      POSTGRES_PASSWORD: ${WORK_ORDER_DB_PASSWORD:?define WORK_ORDER_DB_PASSWORD in .env}
+      POSTGRES_DB: work_order_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - work-order-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${WORK_ORDER_DB_USER:-sastreria} -d work_order_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  work-order-db-data:
