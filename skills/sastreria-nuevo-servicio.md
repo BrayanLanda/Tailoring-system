@@ -78,6 +78,13 @@ test/
     - Patrón de cada prueba: guardar en una petición, **recargar en otra** y comprobar. Verificar siempre las partes delicadas: value objects, colecciones hijas (abonos, trabajos), tipos "owned", índices únicos y concurrencia.
     - Las clases llevan `[Trait("Category", "Integration")]` para poder excluirlas (`dotnet test --filter "Category!=Integration"`) cuando no hay Docker.
 
+16. **Concurrencia optimista** (Infrastructure, sin tocar el dominio):
+    - Cada agregado raíz tiene una columna *shadow* `Version` (`int`, `IsConcurrencyToken`). Cuando dos peticiones modifican el mismo agregado a la vez, la segunda falla en vez de pisar a la primera.
+    - El `DbContext` incrementa `Version` en `SaveChangesAsync` cuando el agregado **cambió**: su fila quedó `Modified` **o** tiene domain events pendientes. La segunda condición es necesaria porque insertar un registro hijo (ej. un abono) no modifica la fila de la raíz.
+    - Consecuencia de diseño: **toda operación del agregado que cambie estado debe modificar la fila de la raíz o levantar un domain event**.
+    - `IUnitOfWork` traduce `DbUpdateConcurrencyException` a `ConcurrencyConflictException` (Application), y la API la responde como **409 Conflict**.
+    - Toda regla de concurrencia se prueba con una prueba de integración: dos "peticiones" cargan el mismo agregado, ambas lo modifican, la segunda debe fallar.
+
 ## Pasos para crear un servicio
 1. Crear los cuatro proyectos (`Api` con `dotnet new webapi`, el resto con `dotnet new classlib`), agregarlos a la solución y configurar las referencias según la regla de dependencias.
 2. Borrar de cada `.csproj` lo que ya define `Directory.Build.props` (`TargetFramework`, `Nullable`, `ImplicitUsings`) y quitar `Class1.cs`.

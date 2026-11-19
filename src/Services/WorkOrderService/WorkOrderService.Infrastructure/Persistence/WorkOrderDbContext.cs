@@ -15,4 +15,29 @@ public class WorkOrderDbContext(DbContextOptions<WorkOrderDbContext> options) : 
 
         modelBuilder.ApplyConfiguration(new WorkOrderConfiguration());
     }
+
+    public override Task<int> SaveChangesAsync(
+        bool acceptAllChangesOnSuccess,
+        CancellationToken cancellationToken = default)
+    {
+        BumpVersionOfChangedAggregates();
+        return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+    }
+
+    private void BumpVersionOfChangedAggregates()
+    {
+        ChangeTracker.DetectChanges();
+
+        foreach (var entry in ChangeTracker.Entries<WorkOrder>())
+        {
+            if (entry.State is EntityState.Added or EntityState.Deleted)
+                continue;
+                
+            var changed = entry.State == EntityState.Modified || entry.Entity.DomainEvents.Count > 0;
+            if (!changed)
+                continue;
+
+            entry.Property<int>("Version").CurrentValue += 1;
+        }
+    }
 }

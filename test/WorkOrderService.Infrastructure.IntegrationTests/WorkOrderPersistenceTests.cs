@@ -6,6 +6,7 @@ using WorkOrderService.Domain.Enums;
 using WorkOrderService.Domain.Repositories;
 using WorkOrderService.Domain.Services;
 using WorkOrderService.Domain.ValueObjects;
+using WorkOrderService.Application.Exceptions;
 
 namespace WorkOrderService.Infrastructure.IntegrationTests;
 
@@ -126,6 +127,35 @@ public sealed class WorkOrderPersistenceTests(PostgresFixture postgres)
         var b = await second.ServiceProvider.GetRequiredService<ISerialNumberGenerator>().GetNextAsync();
 
         Assert.True(b.Value > a.Value);
+    }
+
+     [Fact]
+    public async Task TwoConcurrentPaymentsThatExceedTheBalance_SecondOneIsRejected()
+    {
+        var id = await SaveAsync(serial => RegularWorkOrder(serial, price: 30000m));
+        await RegisterPaymentInNewRequestAsync(id, PaymentId.New(), 10000m); // balance is now 20000
+
+        // Two receptionists load the same state at the same time.
+        await using var first = postgres.NewRequest();
+        await using var second = postgres.NewRequest();
+        var workOrderA = await Repository(first).GetByIdAsync(id);
+        var workOrderB = await Repository(second).GetByIdAsync(id);
+        Assert.NotNull(workOrderA);
+        Assert.NotNull(workOrderB);
+
+        workOrderA.RegisterPayment(PaymentId.New(), Money.Of(15000m), Now.AddDays(2));
+        workOrderB.RegisterPayment(PaymentId.New(), Money.Of(15000m), Now.AddDays(2));
+
+        await UnitOfWork(first).SaveChangesAsync();
+
+        await Assert.ThrowsAsync<ConcurrencyConflictException>(
+            () => UnitOfWork(second).SaveChangesAsync());
+
+        // The customer was never charged more than the price.
+        await using var verify = postgres.NewRequest();
+        var reloaded = await Repository(verify).GetByIdAsync(id);
+        Assert.NotNull(reloaded);
+        Assert.Equal(Money.Of(25000m), reloaded.AmountPaid);
     }
 
     // ---------- helpers ----------

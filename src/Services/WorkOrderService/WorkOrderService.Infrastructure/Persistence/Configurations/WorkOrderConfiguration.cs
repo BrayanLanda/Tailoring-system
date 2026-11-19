@@ -9,6 +9,7 @@ internal sealed class WorkOrderConfiguration : IEntityTypeConfiguration<WorkOrde
     public void Configure(EntityTypeBuilder<WorkOrder> builder)
     {
         builder.ToTable("work_orders");
+        builder.Property<int>("Version").IsConcurrencyToken();
 
         builder.Ignore(w => w.DomainEvents);
         builder.Ignore(w => w.AmountPaid);
