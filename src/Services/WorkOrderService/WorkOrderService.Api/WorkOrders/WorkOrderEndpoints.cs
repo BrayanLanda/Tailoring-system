@@ -1,6 +1,7 @@
 using WorkOrderService.Application.WorkOrders.CreateWorkOrder;
 using WorkOrderService.Application.Exceptions;
 using WorkOrderService.Application.WorkOrders.SetWorkOrderPrice;
+using WorkOrderService.Application.WorkOrders.RegisterPayment;
 using WorkOrderService.Domain.Exceptions;
 using WorkOrderService.Domain.ValueObjects;
 
@@ -20,6 +21,12 @@ public static class WorkOrderEndpoints
         group.MapPut("/{id:guid}/price", SetWorkOrderPriceAsync)
             .WithName("SetWorkOrderPrice")
             .Produces<SetWorkOrderPriceResponse>()
+            .ProducesValidationProblem()
+            .Produces(StatusCodes.Status404NotFound);
+
+        group.MapPost("/{id:guid}/payments", RegisterPaymentAsync)
+            .WithName("RegisterPayment")
+            .Produces<RegisterPaymentResponse>()
             .ProducesValidationProblem()
             .Produces(StatusCodes.Status404NotFound);
 
@@ -86,6 +93,44 @@ public static class WorkOrderEndpoints
             return Results.ValidationProblem(new Dictionary<string, string[]>
             {
                 ["workOrder"] = [exception.Message]
+            });
+        }
+    }
+
+    private static async Task<IResult> RegisterPaymentAsync(
+        Guid id,
+        RegisterPaymentRequest request,
+        RegisterPaymentHandler handler,
+        CancellationToken cancellationToken)
+    {
+        if (request.PaymentId == Guid.Empty)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                [nameof(request.PaymentId)] = ["A payment ID is required for idempotent processing."]
+            });
+        }
+
+        try
+        {
+            var result = await handler.HandleAsync(
+                new RegisterPaymentCommand(new WorkOrderId(id), new PaymentId(request.PaymentId), request.Amount),
+                cancellationToken);
+
+            return Results.Ok(new RegisterPaymentResponse(
+                result.WorkOrderId.Value,
+                result.PaymentId.Value,
+                result.PaymentStatus.ToString()));
+        }
+        catch (WorkOrderNotFoundException)
+        {
+            return Results.NotFound();
+        }
+        catch (DomainException exception)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["payment"] = [exception.Message]
             });
         }
     }

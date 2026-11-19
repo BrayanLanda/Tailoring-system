@@ -1,6 +1,7 @@
 using WorkOrderService.Api.WorkOrders;
 using WorkOrderService.Application.WorkOrders.CreateWorkOrder;
 using WorkOrderService.Application.WorkOrders.SetWorkOrderPrice;
+using WorkOrderService.Application.WorkOrders.RegisterPayment;
 using WorkOrderService.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -13,6 +14,7 @@ builder.Services.AddHealthChecks();
 builder.Services.AddWorkOrderInfrastructure(connectionString);
 builder.Services.AddScoped<CreateWorkOrderHandler>();
 builder.Services.AddScoped<SetWorkOrderPriceHandler>();
+builder.Services.AddScoped<RegisterPaymentHandler>();
 builder.Services.AddSingleton<TimeProvider>(TimeProvider.System);
 
 var app = builder.Build();

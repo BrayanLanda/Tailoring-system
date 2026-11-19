@@ -13,6 +13,7 @@ public sealed class EfWorkOrderRepository(WorkOrderDbContext dbContext) : IWorkO
         dbContext.WorkOrders
             .Include(workOrder => workOrder.Payments)
             .Include(workOrder => workOrder.Jobs)
+            .AsSplitQuery()
             .SingleOrDefaultAsync(workOrder => workOrder.Id == id, cancellationToken);
 
     public async Task AddAsync(WorkOrder workOrder, CancellationToken cancellationToken = default) =>
