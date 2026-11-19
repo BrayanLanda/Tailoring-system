@@ -17,8 +17,10 @@
   </Folder>
   <Folder Name="/test/">
     <Project Path="test/WorkOrderService.Domain.Tests/WorkOrderService.Domain.Tests.csproj" />
+    <Project Path="test/TailorService.Api.Tests/TailorService.Api.Tests.csproj" />
     <Project Path="test/TailorService.Application.Tests/TailorService.Application.Tests.csproj" />
     <Project Path="test/TailorService.Domain.Tests/TailorService.Domain.Tests.csproj" />
+    <Project Path="test/TailorService.Infrastructure.IntegrationTests/TailorService.Infrastructure.IntegrationTests.csproj" />
     <Project Path="test/WorkOrderService.Api.Tests/WorkOrderService.Api.Tests.csproj" />
     <Project Path="test/WorkOrderService.Application.Tests/WorkOrderService.Application.Tests.csproj" />
     <Project Path="test/WorkOrderService.Infrastructure.IntegrationTests/WorkOrderService.Infrastructure.IntegrationTests.csproj" />

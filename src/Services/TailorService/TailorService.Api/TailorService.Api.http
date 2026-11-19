@@ -1,6 +1,17 @@
-@TailorService.Api_HostAddress = http://localhost:0
+@TailorService.Api_HostAddress = http://localhost:5260
+@TailorId = replace-with-id-returned-by-post
 
-GET {{TailorService.Api_HostAddress}}/weatherforecast/
+### Register a tailor
+POST {{TailorService.Api_HostAddress}}/api/tailors
+Content-Type: application/json
+
+{
+  "name": "Maria Lopez"
+}
+
+### Get a tailor by ID (replace with the ID returned by POST)
+GET {{TailorService.Api_HostAddress}}/api/tailors/{{TailorId}}
 Accept: application/json
 
-###
+### Health check
+GET {{TailorService.Api_HostAddress}}/health

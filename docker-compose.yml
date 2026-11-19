@@ -16,5 +16,23 @@ services:
       timeout: 3s
       retries: 10
 
+  tailor-db:
+    image: postgres:17
+    container_name: sastreria-tailor-db
+    environment:
+      POSTGRES_USER: ${TAILOR_DB_USER:-sastreria}
+      POSTGRES_PASSWORD: ${TAILOR_DB_PASSWORD:-${WORK_ORDER_DB_PASSWORD:?define TAILOR_DB_PASSWORD or WORK_ORDER_DB_PASSWORD in .env}}
+      POSTGRES_DB: tailor_db
+    ports:
+      - "5434:5432"
+    volumes:
+      - tailor-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${TAILOR_DB_USER:-sastreria} -d tailor_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
 volumes:
   work-order-db-data:
+  tailor-db-data:
