@@ -49,8 +49,8 @@ sastreria/
 ## Servicios y responsabilidades
 | Servicio | Responsabilidad | Persistencia |
 |---|---|---|
-| WorkOrderService | Boletas, serial, garantías, estados de trabajo, precio y pagos (abonos) | PostgreSQL |
-| TailorService | Sastres y asignación de trabajos | PostgreSQL |
+| WorkOrderService | Boletas, serial, garantías, estados de trabajo, asignación de sastre, precio y pagos (abonos) | PostgreSQL |
+| TailorService | Perfil, estado y disponibilidad de los sastres | PostgreSQL |
 | SettlementService | Periodos, elegibilidad, cálculo del 35 %, cierre | PostgreSQL + Redis |
 | IdentityService | Usuarios y roles (recepción, sastre, admin) | PostgreSQL |
 | GatewayService | Entrada única, enrutamiento, auth | — |
@@ -65,6 +65,8 @@ sastreria/
 7. **Dinero siempre `decimal`** (nunca `double`/`float`), con moneda y redondeo definidos en un solo lugar.
 8. **Fechas en UTC** en BD y eventos; conversión a hora local solo en la UI.
 9. Los secretos y cadenas de conexión van en variables de entorno / `.env` (fuera de git), nunca en el código.
+10. **Responsabilidad de asignación**: `WorkOrderService` es dueño de `WorkOrder.TailorId` y cambia la asignación mediante `WorkOrder.AssignTo(...)`. `TailorService` es dueño del perfil y disponibilidad del sastre; no modifica work orders. Antes de asignar, `WorkOrderService` valida al sastre a través de la frontera del servicio, nunca leyendo su base de datos.
+11. **Identidad y autenticación**: `IdentityService` es dueño de usuarios, credenciales y roles. El Gateway valida/autentica las solicitudes y enruta al servicio. `TailorService` conserva solo datos propios del negocio; no almacena contraseñas ni implementa login. Si un sastre tiene cuenta, se vincula por un ID externo, no por credenciales.
 
 ## Frontend Angular
 - Es una SPA, así que no tiene servidor propio (a diferencia de Next.js): la autenticación se resuelve con **OIDC + PKCE** o con un patrón BFF. **Decisión pendiente** al llegar a IdentityService.

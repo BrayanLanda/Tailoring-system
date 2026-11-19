@@ -1,0 +1,7 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\TailorService.Domain\TailorService.Domain.csproj" />
+  </ItemGroup>
+
+</Project>

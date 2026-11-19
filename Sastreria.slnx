@@ -1,6 +1,12 @@
 <Solution>
   <Folder Name="/src/" />
   <Folder Name="/src/Services/" />
+  <Folder Name="/src/Services/TailorService/">
+    <Project Path="src/Services/TailorService/TailorService.Api/TailorService.Api.csproj" />
+    <Project Path="src/Services/TailorService/TailorService.Application/TailorService.Application.csproj" />
+    <Project Path="src/Services/TailorService/TailorService.Domain/TailorService.Domain.csproj" />
+    <Project Path="src/Services/TailorService/TailorService.Infrastructure/TailorService.Infrastructure.csproj" />
+  </Folder>
   <Folder Name="/src/Services/WorkOrderService/">
     <Project Path="src/Services/WorkOrderService/WorkOrderService.Api/WorkOrderService.Api.csproj" />
     <Project Path="src/Services/WorkOrderService/WorkOrderService.Domain/WorkOrderService.Domain.csproj" />
@@ -11,6 +17,7 @@
   </Folder>
   <Folder Name="/test/">
     <Project Path="test/WorkOrderService.Domain.Tests/WorkOrderService.Domain.Tests.csproj" />
+    <Project Path="test/TailorService.Domain.Tests/TailorService.Domain.Tests.csproj" />
     <Project Path="test/WorkOrderService.Application.Tests/WorkOrderService.Application.Tests.csproj" />
   </Folder>
 </Solution>

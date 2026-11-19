@@ -46,6 +46,11 @@ El negocio se explica en español, pero **todo identificador en código, BD, API
 | TailorService | `Tailor` | datos del sastre y su disponibilidad |
 | SettlementService | `Settlement` | `SettlementLine`, periodo, porcentaje usado |
 
+La asignación se registra en `WorkOrder.TailorId`: `WorkOrderService` cambia la asignación y el estado de trabajo mediante `WorkOrder.AssignTo(...)`. `TailorService` es dueño del perfil y disponibilidad del sastre; antes de asignar, WorkOrderService valida el sastre a través del servicio, nunca consultando su base de datos directamente.
+
+La disponibilidad del sastre se modela solo como activo/inactivo. No se manejan horarios ni calendarios.
+Un administrador crea el perfil del sastre y este queda activo inicialmente. La cuenta de acceso no es necesaria para el MVP; si se incorpora, pertenece a IdentityService y se vincula al perfil por ID, sin guardar credenciales en TailorService.
+
 Value objects: `Money`, `SerialNumber`, `PhoneNumber`, `Percentage`.
 
 ## Dos carriles independientes
