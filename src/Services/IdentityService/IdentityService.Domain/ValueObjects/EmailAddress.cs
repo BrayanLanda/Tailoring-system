@@ -3,7 +3,7 @@ using IdentityService.Domain.Exceptions;
 
 namespace IdentityService.Domain.ValueObjects;
 
-public readonly record struct EmailAddress
+public sealed record EmailAddress
 {
     private EmailAddress(string value) => Value = value;
 

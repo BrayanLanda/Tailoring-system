@@ -10,7 +10,7 @@ public sealed class TailorInvitation : AggregateRoot
     private TailorInvitation() { }
 
     public TailorInvitationId Id { get; private set; }
-    public EmailAddress Email { get; private set; }
+    public EmailAddress Email { get; private set; } = null!;
     public TailorProfileId TailorProfileId { get; private set; }
     public InvitationTokenHash TokenHash { get; private set; } = null!;
     public DateTimeOffset IssuedAt { get; private set; }
@@ -18,14 +18,12 @@ public sealed class TailorInvitation : AggregateRoot
     public DateTimeOffset? AcceptedAt { get; private set; }
 
     public static TailorInvitation Create(
-        string email,
+        EmailAddress email,
         TailorProfileId tailorProfileId,
         InvitationTokenHash tokenHash,
         DateTimeOffset issuedAt,
         DateTimeOffset expiresAt)
     {
-        var normalizedEmail = EmailAddress.Of(email);
-
         if (tailorProfileId.Value == Guid.Empty)
             throw new DomainException("A tailor profile ID is required for the invitation.");
 
@@ -35,7 +33,7 @@ public sealed class TailorInvitation : AggregateRoot
         var invitation = new TailorInvitation
         {
             Id = TailorInvitationId.New(),
-            Email = normalizedEmail,
+            Email = email,
             TailorProfileId = tailorProfileId,
             TokenHash = tokenHash,
             IssuedAt = issuedAt,

@@ -9,49 +9,41 @@ public sealed class TailorInvitationTests
 {
     private static readonly DateTimeOffset IssuedAt = new(2026, 11, 19, 12, 0, 0, TimeSpan.Zero);
     private static readonly InvitationTokenHash CorrectHash = InvitationTokenHash.Of("hash");
+    private static readonly InvitationTokenHash NewHash = InvitationTokenHash.Of("new-hash");
+    private static readonly EmailAddress AnaEmail = EmailAddress.Of("ana@example.com");
+
+    // ---------- Create ----------
 
     [Fact]
-    public void Create_ValidInvitation_NormalizesEmailAndStartsPending()
+    public void Create_ValidInvitation_StartsPending()
     {
         var tailorProfileId = new TailorProfileId(Guid.CreateVersion7());
 
         var invitation = TailorInvitation.Create(
-            "  Ana.Gomez@Example.com ",
-            tailorProfileId,
-            CorrectHash,
-            IssuedAt,
-            IssuedAt.AddDays(2));
+            AnaEmail, tailorProfileId, CorrectHash, IssuedAt, IssuedAt.AddDays(2));
 
-        Assert.Equal("ana.gomez@example.com", invitation.Email.Value);
+        Assert.Equal("ana@example.com", invitation.Email.Value);
         Assert.Equal(tailorProfileId, invitation.TailorProfileId);
         Assert.Equal(IssuedAt.AddDays(2), invitation.ExpiresAt);
         Assert.Null(invitation.AcceptedAt);
         Assert.Single(invitation.DomainEvents);
     }
 
-    [Theory]
-    [InlineData("")]
-    [InlineData("not-an-email")]
-    public void Create_InvalidEmail_ThrowsDomainException(string email)
+    [Fact]
+    public void Create_EmptyTailorProfileId_ThrowsDomainException()
     {
         Assert.Throws<DomainException>(() => TailorInvitation.Create(
-            email,
-            new TailorProfileId(Guid.CreateVersion7()),
-            CorrectHash,
-            IssuedAt,
-            IssuedAt.AddDays(1)));
+            AnaEmail, new TailorProfileId(Guid.Empty), CorrectHash, IssuedAt, IssuedAt.AddDays(1)));
     }
 
     [Fact]
     public void Create_ExpirationNotAfterIssue_ThrowsDomainException()
     {
         Assert.Throws<DomainException>(() => TailorInvitation.Create(
-            "ana@example.com",
-            new TailorProfileId(Guid.CreateVersion7()),
-            CorrectHash,
-            IssuedAt,
-            IssuedAt));
+            AnaEmail, new TailorProfileId(Guid.CreateVersion7()), CorrectHash, IssuedAt, IssuedAt));
     }
+
+    // ---------- Accept ----------
 
     [Fact]
     public void Accept_BeforeExpiration_MarksInvitationAccepted()
@@ -112,15 +104,14 @@ public sealed class TailorInvitationTests
         Assert.Equal(duringValidity.Message, afterExpiry.Message);
     }
 
-    private static readonly InvitationTokenHash NewHash = InvitationTokenHash.Of("new-hash");
+    // ---------- Reissue ----------
 
     [Fact]
     public void Reissue_ReplacesTheTokenHash_SoTheOldTokenNoLongerAccepts()
     {
         var invitation = CreateInvitation();
 
-        invitation.Reissue(
-            EmailAddress.Of("ana@example.com"), NewHash, IssuedAt.AddHours(2), IssuedAt.AddDays(2));
+        invitation.Reissue(AnaEmail, NewHash, IssuedAt.AddHours(2), IssuedAt.AddDays(2));
 
         Assert.Throws<DomainException>(() => invitation.Accept(CorrectHash, IssuedAt.AddHours(3)));
         Assert.Null(invitation.AcceptedAt);
@@ -130,8 +121,7 @@ public sealed class TailorInvitationTests
     public void Reissue_TheNewTokenCanBeAccepted()
     {
         var invitation = CreateInvitation();
-        invitation.Reissue(
-            EmailAddress.Of("ana@example.com"), NewHash, IssuedAt.AddHours(2), IssuedAt.AddDays(2));
+        invitation.Reissue(AnaEmail, NewHash, IssuedAt.AddHours(2), IssuedAt.AddDays(2));
 
         invitation.Accept(NewHash, IssuedAt.AddHours(3));
 
@@ -144,7 +134,7 @@ public sealed class TailorInvitationTests
         var invitation = CreateInvitation();              // it expires one day after IssuedAt
         var reissuedAt = IssuedAt.AddDays(3);             // so it is long expired by now
 
-        invitation.Reissue(EmailAddress.Of("ana@example.com"), NewHash, reissuedAt, reissuedAt.AddDays(1));
+        invitation.Reissue(AnaEmail, NewHash, reissuedAt, reissuedAt.AddDays(1));
         invitation.Accept(NewHash, reissuedAt.AddHours(1));
 
         Assert.NotNull(invitation.AcceptedAt);
@@ -167,8 +157,8 @@ public sealed class TailorInvitationTests
         var invitation = CreateInvitation();
         invitation.Accept(CorrectHash, IssuedAt.AddHours(1));
 
-        Assert.Throws<DomainException>(() => invitation.Reissue(
-            EmailAddress.Of("ana@example.com"), NewHash, IssuedAt.AddHours(2), IssuedAt.AddDays(2)));
+        Assert.Throws<DomainException>(() =>
+            invitation.Reissue(AnaEmail, NewHash, IssuedAt.AddHours(2), IssuedAt.AddDays(2)));
     }
 
     [Fact]
@@ -176,8 +166,8 @@ public sealed class TailorInvitationTests
     {
         var invitation = CreateInvitation();
 
-        Assert.Throws<DomainException>(() => invitation.Reissue(
-            EmailAddress.Of("ana@example.com"), NewHash, IssuedAt.AddHours(2), IssuedAt.AddHours(2)));
+        Assert.Throws<DomainException>(() =>
+            invitation.Reissue(AnaEmail, NewHash, IssuedAt.AddHours(2), IssuedAt.AddHours(2)));
 
         // The original token still works: a rejected reissue changed nothing.
         invitation.Accept(CorrectHash, IssuedAt.AddHours(3));
@@ -189,8 +179,7 @@ public sealed class TailorInvitationTests
     {
         var invitation = CreateInvitation();
 
-        invitation.Reissue(
-            EmailAddress.Of("ana@example.com"), NewHash, IssuedAt.AddHours(2), IssuedAt.AddDays(2));
+        invitation.Reissue(AnaEmail, NewHash, IssuedAt.AddHours(2), IssuedAt.AddDays(2));
 
         var reissued = invitation.DomainEvents.OfType<TailorInvitationReissued>().Single();
         Assert.Equal(invitation.Id, reissued.InvitationId);
@@ -198,7 +187,7 @@ public sealed class TailorInvitationTests
     }
 
     private static TailorInvitation CreateInvitation() => TailorInvitation.Create(
-        "ana@example.com",
+        AnaEmail,
         new TailorProfileId(Guid.CreateVersion7()),
         CorrectHash,
         IssuedAt,

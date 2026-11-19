@@ -113,4 +113,26 @@ public sealed class IssueTailorInvitationHandlerTests
         FakeInvitationTokenGenerator tokenGenerator,
         IInvitationDelivery delivery) =>
         new(repository, new CountingUnitOfWork(), tokenGenerator, delivery, new FixedTimeProvider(Now), InvitationLifetime);
+
+    [Fact]
+    public async Task HandleAsync_EmptyTailorProfileId_PersistsAndDeliversNothing()
+    {
+        var repository = new InMemoryTailorInvitationRepository();
+        var unitOfWork = new CountingUnitOfWork();
+        var delivery = new RecordingInvitationDelivery();
+        var handler = new IssueTailorInvitationHandler(
+            repository,
+            unitOfWork,
+            new FakeInvitationTokenGenerator(),
+            delivery,
+            new FixedTimeProvider(Now),
+            InvitationLifetime);
+
+        await Assert.ThrowsAsync<DomainException>(() => handler.HandleAsync(
+            new IssueTailorInvitationCommand("ana@example.com", Guid.Empty)));
+
+        Assert.Empty(repository.Invitations);
+        Assert.Equal(0, unitOfWork.SaveChangesCalls);
+        Assert.Empty(delivery.Deliveries);
+    }
 }

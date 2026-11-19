@@ -40,8 +40,6 @@ public sealed class IssueTailorInvitationHandler
     {
         var email = EmailAddress.Of(command.Email);
         var tailorProfileId = new TailorProfileId(command.TailorProfileId);
-        if (tailorProfileId.Value == Guid.Empty)
-            throw new DomainException("A tailor profile ID is required for the invitation.");
 
         var issuedAt = _timeProvider.GetUtcNow();
         var expiresAt = issuedAt.Add(_invitationLifetime);
@@ -52,7 +50,7 @@ public sealed class IssueTailorInvitationHandler
         if (invitation is null)
         {
             invitation = TailorInvitation.Create(
-                email.Value,
+                email,
                 tailorProfileId,
                 token.Hash,
                 issuedAt,
