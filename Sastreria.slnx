@@ -19,5 +19,6 @@
     <Project Path="test/WorkOrderService.Domain.Tests/WorkOrderService.Domain.Tests.csproj" />
     <Project Path="test/TailorService.Domain.Tests/TailorService.Domain.Tests.csproj" />
     <Project Path="test/WorkOrderService.Application.Tests/WorkOrderService.Application.Tests.csproj" />
+    <Project Path="test/WorkOrderService.Infrastructure.IntegrationTests/WorkOrderService.Infrastructure.IntegrationTests.csproj" />
   </Folder>
 </Solution>

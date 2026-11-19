@@ -71,6 +71,13 @@ test/
     - El handler orquesta (cargar, ejecutar el método del agregado, guardar); **no contiene reglas de negocio**.
     - Pruebas de handlers con **fakes escritos a mano** en `test/<Service>.Application.Tests/Fakes/` (repositorio en memoria, serial secuencial, unit of work contador, `TimeProvider` fijo). No se usan librerías de mocks.
 
+15. **Pruebas de integración (persistencia)**:
+    - Proyecto `test/<Service>.Infrastructure.IntegrationTests`, con **PostgreSQL real en un contenedor** (Testcontainers), nunca una base en memoria: el mapeo de EF Core contra PostgreSQL es justo lo que se quiere verificar.
+    - Un contenedor compartido por todas las pruebas (`ICollectionFixture`). Las migraciones se aplican al arrancar el contenedor.
+    - Se usa el **registro real de dependencias** (`Add<Service>Infrastructure`): cada "petición" de la prueba es un `scope` nuevo (un `DbContext` nuevo), así se imita el ciclo real de una petición HTTP y no se reutiliza el estado en memoria de EF.
+    - Patrón de cada prueba: guardar en una petición, **recargar en otra** y comprobar. Verificar siempre las partes delicadas: value objects, colecciones hijas (abonos, trabajos), tipos "owned", índices únicos y concurrencia.
+    - Las clases llevan `[Trait("Category", "Integration")]` para poder excluirlas (`dotnet test --filter "Category!=Integration"`) cuando no hay Docker.
+
 ## Pasos para crear un servicio
 1. Crear los cuatro proyectos (`Api` con `dotnet new webapi`, el resto con `dotnet new classlib`), agregarlos a la solución y configurar las referencias según la regla de dependencias.
 2. Borrar de cada `.csproj` lo que ya define `Directory.Build.props` (`TargetFramework`, `Nullable`, `ImplicitUsings`) y quitar `Class1.cs`.
