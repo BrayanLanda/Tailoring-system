@@ -31,8 +31,8 @@ sastreria/
 │   ├── Services/
 │   │   ├── WorkOrderService/         # .Domain / .Application / .Infrastructure / .Api
 │   │   ├── TailorService/
-│   │   └── SettlementService/
-│   ├── IdentityService/              # (a definir su ubicación al llegar a este paso)
+│   │   ├── SettlementService/
+│   │   └── IdentityService/          # identidad, credenciales, roles y tokens
 │   └── GatewayService/
 ├── frontend/web-app/                 # Angular
 ├── infra/{docker,k8s}/
@@ -52,7 +52,7 @@ sastreria/
 | WorkOrderService | Boletas, serial, garantías, estados de trabajo, asignación de sastre, precio y pagos (abonos) | PostgreSQL |
 | TailorService | Perfil, estado y disponibilidad de los sastres | PostgreSQL |
 | SettlementService | Periodos, elegibilidad, cálculo del 35 %, cierre | PostgreSQL + Redis |
-| IdentityService | Usuarios y roles (recepción, sastre, admin) | PostgreSQL |
+| IdentityService | Cuentas, credenciales, roles y emisión de tokens | PostgreSQL |
 | GatewayService | Entrada única, enrutamiento, auth | — |
 
 ## Reglas de arquitectura
@@ -66,10 +66,16 @@ sastreria/
 8. **Fechas en UTC** en BD y eventos; conversión a hora local solo en la UI.
 9. Los secretos y cadenas de conexión van en variables de entorno / `.env` (fuera de git), nunca en el código.
 10. **Responsabilidad de asignación**: `WorkOrderService` es dueño de `WorkOrder.TailorId` y cambia la asignación mediante `WorkOrder.AssignTo(...)`. `TailorService` es dueño del perfil y disponibilidad del sastre; no modifica work orders. Antes de asignar, `WorkOrderService` valida al sastre a través de la frontera del servicio, nunca leyendo su base de datos.
-11. **Identidad y autenticación**: `IdentityService` es dueño de usuarios, credenciales y roles. El Gateway valida/autentica las solicitudes y enruta al servicio. `TailorService` conserva solo datos propios del negocio; no almacena contraseñas ni implementa login. Si un sastre tiene cuenta, se vincula por un ID externo, no por credenciales.
+11. **Identidad y autenticación**:
+    - `IdentityService` vive en `src/Services/IdentityService`, es dueño de las cuentas, credenciales, roles y tokens; persiste en su propia base PostgreSQL.
+    - Para el MVP, soporta correo y contraseña mediante ASP.NET Core Identity, y emite tokens con OpenIddict usando estándares OAuth 2.0/OIDC. Google puede añadirse después como proveedor externo opcional; nunca debe ser el único modo de acceso.
+    - No guardar contraseñas en texto plano ni implementar algoritmos propios de hashing o firma de tokens. No permitir que el registro público elija su propio rol privilegiado. La cuenta admin inicial se provisiona de forma controlada.
+    - No hay autorregistro público de sastres: un admin provisionado crea primero el perfil `Tailor` y luego invita el correo de esa persona con rol `Tailor`. La invitación es de un solo uso y expira; al aceptarla, la persona configura su contraseña local. El rol admin no se asigna mediante invitaciones de sastre.
+    - El Gateway valida tokens y enruta. Cada API también valida los tokens y aplica autorización para protegerse de llamadas que eviten el Gateway.
+    - `TailorService` conserva solo datos propios del negocio; no almacena contraseñas ni implementa login. `IdentityService` vincula la cuenta con el ID de perfil `Tailor`, que es un ID externo para IdentityService.
 
 ## Frontend Angular
-- Es una SPA, así que no tiene servidor propio (a diferencia de Next.js): la autenticación se resuelve con **OIDC + PKCE** o con un patrón BFF. **Decisión pendiente** al llegar a IdentityService.
+- Es una SPA, así que no tiene servidor propio (a diferencia de Next.js): usar Authorization Code con PKCE para OIDC; no guardar client secrets en Angular.
 - Habla únicamente con el Gateway, nunca directo con los servicios.
 
 ## Orden de construcción
@@ -79,11 +85,11 @@ sastreria/
 4. Pagos: ya viven dentro de WorkOrderService (no hay servicio aparte por ahora)
 5. TailorService
 6. SettlementService (Redis para el bloqueo)
-7. Gateway + Identity + Angular
+7. IdentityService + Gateway + Angular
 8. Docker Compose completo → Kubernetes
 
 Avanzar **paso a paso**: el usuario quiere guía incremental, con comandos listos para copiar y una breve explicación de por qué, confirmando el resultado antes de seguir.
 
 ## Decisiones abiertas
-- Ubicación y tecnología de IdentityService (¿Duende, Keycloak u otra?)
-- Estrategia de autenticación del frontend (PKCE vs BFF)
+- Provisionamiento seguro de la cuenta admin inicial (secrets/configuración de despliegue; nunca credenciales predeterminadas en código).
+- Roles y políticas concretas para recepción, sastre y admin, incluyendo cómo se vincula la identidad con el perfil `Tailor`.

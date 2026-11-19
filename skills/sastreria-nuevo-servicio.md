@@ -111,5 +111,14 @@ test/
 - Logs estructurados con Serilog; incluir el `SerialNumber` de la work order o el id de correlación en cada log relevante.
 - No exponer entidades de dominio en la API; usar DTOs.
 
+## Consideraciones de IdentityService
+- IdentityService es un servicio propio en `src/Services/IdentityService` con PostgreSQL, ASP.NET Core Identity para cuentas/contraseñas/roles y OpenIddict para OAuth 2.0/OIDC.
+- El inicio de sesión local con correo y contraseña es el flujo base. Google es un proveedor externo opcional que se puede incorporar después; no se requiere para crear una cuenta local.
+- IdentityService nunca almacena contraseñas en texto plano ni crea algoritmos criptográficos propios. El rol admin se provisiona de forma controlada; un registro público no puede autoasignarse roles.
+- No hay autorregistro público de sastres: el admin crea el perfil `Tailor` e invita el correo con rol `Tailor`. La invitación es de un solo uso y expira; al aceptarla, la persona configura una contraseña local. El flujo no puede asignar el rol admin.
+- IdentityService vincula la cuenta con el ID de perfil `Tailor`, que es externo para IdentityService. TailorService solo guarda su perfil de negocio y no guarda credenciales.
+- Gateway y APIs validan tokens. Las APIs también aplican autorización, incluso si el tráfico suele pasar por Gateway.
+- La cuenta admin inicial se provisiona mediante configuración/secrets de despliegue, sin credenciales predeterminadas en código.
+
 ## Antes de terminar un cambio
 Verifica que compila (`dotnet build`), que las pruebas pasan (`dotnet test`) y que, si tocaste un contrato de evento, los servicios que lo consumen siguen siendo compatibles.

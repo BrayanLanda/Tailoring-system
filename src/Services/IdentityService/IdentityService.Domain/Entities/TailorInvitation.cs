@@ -1,0 +1,65 @@
+using IdentityService.Domain.Common;
+using IdentityService.Domain.Events;
+using IdentityService.Domain.Exceptions;
+using IdentityService.Domain.ValueObjects;
+
+namespace IdentityService.Domain.Entities;
+
+public sealed class TailorInvitation : AggregateRoot
+{
+    private TailorInvitation() { }
+
+    public TailorInvitationId Id { get; private set; }
+    public EmailAddress Email { get; private set; }
+    public TailorProfileId TailorProfileId { get; private set; }
+    public DateTimeOffset IssuedAt { get; private set; }
+    public DateTimeOffset ExpiresAt { get; private set; }
+    public DateTimeOffset? AcceptedAt { get; private set; }
+
+    public static TailorInvitation Create(
+        string email,
+        TailorProfileId tailorProfileId,
+        DateTimeOffset issuedAt,
+        DateTimeOffset expiresAt)
+    {
+        var normalizedEmail = EmailAddress.Of(email);
+
+        if (tailorProfileId.Value == Guid.Empty)
+            throw new DomainException("A tailor profile ID is required for the invitation.");
+
+        if (expiresAt <= issuedAt)
+            throw new DomainException("The invitation must expire after it is issued.");
+
+        var invitation = new TailorInvitation
+        {
+            Id = TailorInvitationId.New(),
+            Email = normalizedEmail,
+            TailorProfileId = tailorProfileId,
+            IssuedAt = issuedAt,
+            ExpiresAt = expiresAt
+        };
+
+        invitation.Raise(new TailorInvitationIssued(
+            invitation.Id,
+            invitation.TailorProfileId,
+            invitation.Email.Value,
+            invitation.ExpiresAt));
+
+        return invitation;
+    }
+
+    public void Accept(DateTimeOffset acceptedAt)
+    {
+        if (AcceptedAt is not null)
+            throw new DomainException("The invitation has already been accepted.");
+
+        if (acceptedAt < IssuedAt)
+            throw new DomainException("The invitation cannot be accepted before it is issued.");
+
+        if (acceptedAt >= ExpiresAt)
+            throw new DomainException("The invitation has expired.");
+
+        AcceptedAt = acceptedAt;
+        Raise(new TailorInvitationAccepted(Id, TailorProfileId, acceptedAt));
+    }
+}
