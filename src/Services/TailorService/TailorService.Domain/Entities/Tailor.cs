@@ -1,4 +1,5 @@
 using TailorService.Domain.Common;
+using TailorService.Domain.Events;
 using TailorService.Domain.Exceptions;
 using TailorService.Domain.ValueObjects;
 
@@ -17,11 +18,32 @@ public sealed class Tailor : AggregateRoot
         if (string.IsNullOrWhiteSpace(name))
             throw new DomainException("Tailor name is required.");
 
-        return new Tailor
+        var tailor = new Tailor
         {
             Id = TailorId.New(),
             Name = name.Trim(),
             IsActive = true
         };
+
+        tailor.Raise(new TailorRegistered(tailor.Id, tailor.Name));
+        return tailor;
+    }
+
+    public void Deactivate()
+    {
+        if (!IsActive)
+            return;
+
+        IsActive = false;
+        Raise(new TailorDeactivated(Id));
+    }
+
+    public void Reactivate()
+    {
+        if (IsActive)
+            return;
+
+        IsActive = true;
+        Raise(new TailorReactivated(Id));
     }
 }
