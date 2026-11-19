@@ -85,6 +85,14 @@ test/
     - `IUnitOfWork` traduce `DbUpdateConcurrencyException` a `ConcurrencyConflictException` (Application), y la API la responde como **409 Conflict**.
     - Toda regla de concurrencia se prueba con una prueba de integración: dos "peticiones" cargan el mismo agregado, ambas lo modifican, la segunda debe fallar.
 
+17. **API (errores y contratos)**:
+    - Los endpoints **no tienen `try/catch`**. Un `IExceptionHandler` central traduce excepciones a `ProblemDetails`: `*NotFoundException` → **404**, `ConcurrencyConflictException` → **409**, `DomainException` → **422**, cualquier otra → **500** genérico sin detalles internos (el handler no la atiende).
+    - **400** (`ValidationProblem`) solo para peticiones mal formadas (campos faltantes o nulos), validadas en el endpoint.
+    - Peticiones y respuestas usan tipos simples (`Guid`, `long`, `decimal`, `string`), nunca value objects ni entidades del dominio.
+    - Todo `201 Created` devuelve un `Location` que existe (hay un GET para ese recurso).
+    - Los mensajes de las excepciones llegan al cliente en `detail`: deben ser legibles y no filtrar tipos internos (ej. usar `id.Value`, no `id`).
+    - El mapeo de errores se prueba con pruebas unitarias del handler (`DefaultHttpContext`), sin servidor ni base de datos.
+
 ## Pasos para crear un servicio
 1. Crear los cuatro proyectos (`Api` con `dotnet new webapi`, el resto con `dotnet new classlib`), agregarlos a la solución y configurar las referencias según la regla de dependencias.
 2. Borrar de cada `.csproj` lo que ya define `Directory.Build.props` (`TargetFramework`, `Nullable`, `ImplicitUsings`) y quitar `Class1.cs`.
