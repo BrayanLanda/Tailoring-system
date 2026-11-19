@@ -1,8 +1,6 @@
 using WorkOrderService.Application.WorkOrders.CreateWorkOrder;
-using WorkOrderService.Application.Exceptions;
 using WorkOrderService.Application.WorkOrders.SetWorkOrderPrice;
 using WorkOrderService.Application.WorkOrders.RegisterPayment;
-using WorkOrderService.Domain.Exceptions;
 using WorkOrderService.Domain.ValueObjects;
 
 namespace WorkOrderService.Api.WorkOrders;
@@ -16,19 +14,23 @@ public static class WorkOrderEndpoints
         group.MapPost("/", CreateWorkOrderAsync)
             .WithName("CreateWorkOrder")
             .Produces<CreateWorkOrderResponse>(StatusCodes.Status201Created)
-            .ProducesValidationProblem();
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
 
         group.MapPut("/{id:guid}/price", SetWorkOrderPriceAsync)
             .WithName("SetWorkOrderPrice")
             .Produces<SetWorkOrderPriceResponse>()
-            .ProducesValidationProblem()
-            .Produces(StatusCodes.Status404NotFound);
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
 
         group.MapPost("/{id:guid}/payments", RegisterPaymentAsync)
             .WithName("RegisterPayment")
             .Produces<RegisterPaymentResponse>()
             .ProducesValidationProblem()
-            .Produces(StatusCodes.Status404NotFound);
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
 
         return endpoints;
     }
@@ -54,20 +56,11 @@ public static class WorkOrderEndpoints
                 .Select(job => new CreateWorkOrderJob(job!.Description, job.Quantity))
                 .ToArray());
 
-        try
-        {
-            var result = await handler.HandleAsync(command, cancellationToken);
-            return Results.Created(
-                $"/api/work-orders/{result.Id.Value}",
-                new CreateWorkOrderResponse(result.Id.Value, result.SerialNumber.Value));
-        }
-        catch (DomainException exception)
-        {
-            return Results.ValidationProblem(new Dictionary<string, string[]>
-            {
-                ["workOrder"] = [exception.Message]
-            });
-        }
+        var result = await handler.HandleAsync(command, cancellationToken);
+
+        return Results.Created(
+            $"/api/work-orders/{result.Id.Value}",
+            new CreateWorkOrderResponse(result.Id.Value, result.SerialNumber.Value));
     }
 
     private static async Task<IResult> SetWorkOrderPriceAsync(
@@ -76,25 +69,11 @@ public static class WorkOrderEndpoints
         SetWorkOrderPriceHandler handler,
         CancellationToken cancellationToken)
     {
-        try
-        {
-            var result = await handler.HandleAsync(
-                new SetWorkOrderPriceCommand(new WorkOrderId(id), request.Amount),
-                cancellationToken);
+        var result = await handler.HandleAsync(
+            new SetWorkOrderPriceCommand(new WorkOrderId(id), request.Amount),
+            cancellationToken);
 
-            return Results.Ok(new SetWorkOrderPriceResponse(result.WorkOrderId.Value, result.Price.Amount));
-        }
-        catch (WorkOrderNotFoundException)
-        {
-            return Results.NotFound();
-        }
-        catch (DomainException exception)
-        {
-            return Results.ValidationProblem(new Dictionary<string, string[]>
-            {
-                ["workOrder"] = [exception.Message]
-            });
-        }
+        return Results.Ok(new SetWorkOrderPriceResponse(result.WorkOrderId.Value, result.Price.Amount));
     }
 
     private static async Task<IResult> RegisterPaymentAsync(
@@ -111,27 +90,13 @@ public static class WorkOrderEndpoints
             });
         }
 
-        try
-        {
-            var result = await handler.HandleAsync(
-                new RegisterPaymentCommand(new WorkOrderId(id), new PaymentId(request.PaymentId), request.Amount),
-                cancellationToken);
+        var result = await handler.HandleAsync(
+            new RegisterPaymentCommand(new WorkOrderId(id), new PaymentId(request.PaymentId), request.Amount),
+            cancellationToken);
 
-            return Results.Ok(new RegisterPaymentResponse(
-                result.WorkOrderId.Value,
-                result.PaymentId.Value,
-                result.PaymentStatus.ToString()));
-        }
-        catch (WorkOrderNotFoundException)
-        {
-            return Results.NotFound();
-        }
-        catch (DomainException exception)
-        {
-            return Results.ValidationProblem(new Dictionary<string, string[]>
-            {
-                ["payment"] = [exception.Message]
-            });
-        }
+        return Results.Ok(new RegisterPaymentResponse(
+            result.WorkOrderId.Value,
+            result.PaymentId.Value,
+            result.PaymentStatus.ToString()));
     }
 }

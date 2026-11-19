@@ -3,6 +3,7 @@ using WorkOrderService.Application.WorkOrders.CreateWorkOrder;
 using WorkOrderService.Application.WorkOrders.SetWorkOrderPrice;
 using WorkOrderService.Application.WorkOrders.RegisterPayment;
 using WorkOrderService.Infrastructure;
+using WorkOrderService.Api;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -11,6 +12,8 @@ var connectionString = builder.Configuration.GetConnectionString("WorkOrderDb")
 
 builder.Services.AddOpenApi();
 builder.Services.AddHealthChecks();
+builder.Services.AddProblemDetails();
+builder.Services.AddExceptionHandler<ApiExceptionHandler>();
 builder.Services.AddWorkOrderInfrastructure(connectionString);
 builder.Services.AddScoped<CreateWorkOrderHandler>();
 builder.Services.AddScoped<SetWorkOrderPriceHandler>();
@@ -18,6 +21,7 @@ builder.Services.AddScoped<RegisterPaymentHandler>();
 builder.Services.AddSingleton<TimeProvider>(TimeProvider.System);
 
 var app = builder.Build();
+app.UseExceptionHandler();
 
 if (app.Environment.IsDevelopment())
 {
@@ -29,3 +33,6 @@ app.MapHealthChecks("/health");
 app.MapWorkOrderEndpoints();
 
 app.Run();
+
+public partial class Program;
+
