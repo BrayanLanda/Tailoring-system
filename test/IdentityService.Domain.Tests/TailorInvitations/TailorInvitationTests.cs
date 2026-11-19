@@ -7,6 +7,7 @@ namespace IdentityService.Domain.Tests.TailorInvitations;
 public sealed class TailorInvitationTests
 {
     private static readonly DateTimeOffset IssuedAt = new(2026, 11, 19, 12, 0, 0, TimeSpan.Zero);
+    private static readonly InvitationTokenHash CorrectHash = InvitationTokenHash.Of("hash");
 
     [Fact]
     public void Create_ValidInvitation_NormalizesEmailAndStartsPending()
@@ -16,7 +17,7 @@ public sealed class TailorInvitationTests
         var invitation = TailorInvitation.Create(
             "  Ana.Gomez@Example.com ",
             tailorProfileId,
-            InvitationTokenHash.Of("hash"),
+            CorrectHash,
             IssuedAt,
             IssuedAt.AddDays(2));
 
@@ -35,7 +36,7 @@ public sealed class TailorInvitationTests
         Assert.Throws<DomainException>(() => TailorInvitation.Create(
             email,
             new TailorProfileId(Guid.CreateVersion7()),
-            InvitationTokenHash.Of("hash"),
+            CorrectHash,
             IssuedAt,
             IssuedAt.AddDays(1)));
     }
@@ -46,7 +47,7 @@ public sealed class TailorInvitationTests
         Assert.Throws<DomainException>(() => TailorInvitation.Create(
             "ana@example.com",
             new TailorProfileId(Guid.CreateVersion7()),
-            InvitationTokenHash.Of("hash"),
+            CorrectHash,
             IssuedAt,
             IssuedAt));
     }
@@ -57,7 +58,7 @@ public sealed class TailorInvitationTests
         var invitation = CreateInvitation();
         var acceptedAt = IssuedAt.AddHours(1);
 
-        invitation.Accept(acceptedAt);
+        invitation.Accept(CorrectHash, acceptedAt);
 
         Assert.Equal(acceptedAt, invitation.AcceptedAt);
         Assert.Equal(2, invitation.DomainEvents.Count);
@@ -68,7 +69,7 @@ public sealed class TailorInvitationTests
     {
         var invitation = CreateInvitation();
 
-        Assert.Throws<DomainException>(() => invitation.Accept(invitation.ExpiresAt));
+        Assert.Throws<DomainException>(() => invitation.Accept(CorrectHash, invitation.ExpiresAt));
 
         Assert.Null(invitation.AcceptedAt);
         Assert.Single(invitation.DomainEvents);
@@ -78,15 +79,42 @@ public sealed class TailorInvitationTests
     public void Accept_AlreadyAcceptedInvitation_ThrowsDomainException()
     {
         var invitation = CreateInvitation();
-        invitation.Accept(IssuedAt.AddHours(1));
+        invitation.Accept(CorrectHash, IssuedAt.AddHours(1));
 
-        Assert.Throws<DomainException>(() => invitation.Accept(IssuedAt.AddHours(2)));
+        Assert.Throws<DomainException>(() => invitation.Accept(CorrectHash, IssuedAt.AddHours(2)));
+    }
+
+    [Fact]
+    public void Accept_WithAWrongToken_ThrowsAndDoesNotAccept()
+    {
+        var invitation = CreateInvitation();
+
+        Assert.Throws<DomainException>(() =>
+            invitation.Accept(InvitationTokenHash.Of("another-hash"), IssuedAt.AddHours(1)));
+
+        Assert.Null(invitation.AcceptedAt);
+        Assert.Single(invitation.DomainEvents);
+    }
+
+    [Fact]
+    public void Accept_WithAWrongToken_GivesTheSameAnswerWhateverTheStateOfTheInvitation()
+    {
+        var invitation = CreateInvitation();
+        var wrong = InvitationTokenHash.Of("another-hash");
+
+        var duringValidity = Assert.Throws<DomainException>(() =>
+            invitation.Accept(wrong, IssuedAt.AddHours(1)));
+        var afterExpiry = Assert.Throws<DomainException>(() =>
+            invitation.Accept(wrong, invitation.ExpiresAt.AddDays(1)));
+
+        // Someone without the token must not learn whether the invitation expired.
+        Assert.Equal(duringValidity.Message, afterExpiry.Message);
     }
 
     private static TailorInvitation CreateInvitation() => TailorInvitation.Create(
         "ana@example.com",
         new TailorProfileId(Guid.CreateVersion7()),
-        InvitationTokenHash.Of("hash"),
+        CorrectHash,
         IssuedAt,
         IssuedAt.AddDays(1));
 }

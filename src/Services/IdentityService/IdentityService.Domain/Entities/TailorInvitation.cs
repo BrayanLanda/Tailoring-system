@@ -12,7 +12,7 @@ public sealed class TailorInvitation : AggregateRoot
     public TailorInvitationId Id { get; private set; }
     public EmailAddress Email { get; private set; }
     public TailorProfileId TailorProfileId { get; private set; }
-    public InvitationTokenHash TokenHash { get; private set; }
+    public InvitationTokenHash TokenHash { get; private set; } = null!;
     public DateTimeOffset IssuedAt { get; private set; }
     public DateTimeOffset ExpiresAt { get; private set; }
     public DateTimeOffset? AcceptedAt { get; private set; }
@@ -51,8 +51,11 @@ public sealed class TailorInvitation : AggregateRoot
         return invitation;
     }
 
-    public void Accept(DateTimeOffset acceptedAt)
+    public void Accept(InvitationTokenHash presentedTokenHash, DateTimeOffset acceptedAt)
     {
+        if (!TokenHash.Matches(presentedTokenHash))
+            throw new DomainException("The invitation is not valid.");
+
         if (AcceptedAt is not null)
             throw new DomainException("The invitation has already been accepted.");
 

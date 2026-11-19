@@ -1,8 +1,10 @@
+using System.Security.Cryptography;
+using System.Text;
 using IdentityService.Domain.Exceptions;
 
 namespace IdentityService.Domain.ValueObjects;
 
-public readonly record struct InvitationTokenHash
+public sealed record InvitationTokenHash
 {
     private InvitationTokenHash(string value) => Value = value;
 
@@ -15,4 +17,9 @@ public readonly record struct InvitationTokenHash
 
         return new InvitationTokenHash(value.Trim());
     }
+
+    public bool Matches(InvitationTokenHash other) =>
+        CryptographicOperations.FixedTimeEquals(
+            Encoding.UTF8.GetBytes(Value),
+            Encoding.UTF8.GetBytes(other.Value));
 }
