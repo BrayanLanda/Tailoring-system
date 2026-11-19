@@ -1,5 +1,6 @@
 using WorkOrderService.Api.WorkOrders;
 using WorkOrderService.Application.WorkOrders.CreateWorkOrder;
+using WorkOrderService.Application.WorkOrders.SetWorkOrderPrice;
 using WorkOrderService.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -11,6 +12,7 @@ builder.Services.AddOpenApi();
 builder.Services.AddHealthChecks();
 builder.Services.AddWorkOrderInfrastructure(connectionString);
 builder.Services.AddScoped<CreateWorkOrderHandler>();
+builder.Services.AddScoped<SetWorkOrderPriceHandler>();
 builder.Services.AddSingleton<TimeProvider>(TimeProvider.System);
 
 var app = builder.Build();

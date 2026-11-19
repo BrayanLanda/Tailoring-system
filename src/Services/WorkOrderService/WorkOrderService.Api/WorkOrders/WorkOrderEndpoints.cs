@@ -1,5 +1,8 @@
 using WorkOrderService.Application.WorkOrders.CreateWorkOrder;
+using WorkOrderService.Application.Exceptions;
+using WorkOrderService.Application.WorkOrders.SetWorkOrderPrice;
 using WorkOrderService.Domain.Exceptions;
+using WorkOrderService.Domain.ValueObjects;
 
 namespace WorkOrderService.Api.WorkOrders;
 
@@ -13,6 +16,12 @@ public static class WorkOrderEndpoints
             .WithName("CreateWorkOrder")
             .Produces<CreateWorkOrderResponse>(StatusCodes.Status201Created)
             .ProducesValidationProblem();
+
+        group.MapPut("/{id:guid}/price", SetWorkOrderPriceAsync)
+            .WithName("SetWorkOrderPrice")
+            .Produces<SetWorkOrderPriceResponse>()
+            .ProducesValidationProblem()
+            .Produces(StatusCodes.Status404NotFound);
 
         return endpoints;
     }
@@ -44,6 +53,33 @@ public static class WorkOrderEndpoints
             return Results.Created(
                 $"/api/work-orders/{result.Id.Value}",
                 new CreateWorkOrderResponse(result.Id.Value, result.SerialNumber.Value));
+        }
+        catch (DomainException exception)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["workOrder"] = [exception.Message]
+            });
+        }
+    }
+
+    private static async Task<IResult> SetWorkOrderPriceAsync(
+        Guid id,
+        SetWorkOrderPriceRequest request,
+        SetWorkOrderPriceHandler handler,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var result = await handler.HandleAsync(
+                new SetWorkOrderPriceCommand(new WorkOrderId(id), request.Amount),
+                cancellationToken);
+
+            return Results.Ok(new SetWorkOrderPriceResponse(result.WorkOrderId.Value, result.Price.Amount));
+        }
+        catch (WorkOrderNotFoundException)
+        {
+            return Results.NotFound();
         }
         catch (DomainException exception)
         {
