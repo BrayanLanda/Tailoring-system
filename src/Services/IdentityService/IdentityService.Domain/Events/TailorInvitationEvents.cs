@@ -13,3 +13,9 @@ public sealed record TailorInvitationAccepted(
     TailorInvitationId InvitationId,
     TailorProfileId TailorProfileId,
     DateTimeOffset AcceptedAt) : IDomainEvent;
+
+public sealed record TailorInvitationReissued(
+    TailorInvitationId InvitationId,
+    TailorProfileId TailorProfileId,
+    string Email,
+    DateTimeOffset ExpiresAt) : IDomainEvent;

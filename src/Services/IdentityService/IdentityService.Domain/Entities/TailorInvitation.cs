@@ -68,4 +68,24 @@ public sealed class TailorInvitation : AggregateRoot
         AcceptedAt = acceptedAt;
         Raise(new TailorInvitationAccepted(Id, TailorProfileId, acceptedAt));
     }
+
+    public void Reissue(
+        EmailAddress email,
+        InvitationTokenHash tokenHash,
+        DateTimeOffset issuedAt,
+        DateTimeOffset expiresAt)
+    {
+        if (AcceptedAt is not null)
+            throw new DomainException("The invitation has already been accepted; the tailor already has access.");
+
+        if (expiresAt <= issuedAt)
+            throw new DomainException("The invitation must expire after it is issued.");
+
+        Email = email;
+        TokenHash = tokenHash;
+        IssuedAt = issuedAt;
+        ExpiresAt = expiresAt;
+
+        Raise(new TailorInvitationReissued(Id, TailorProfileId, Email.Value, ExpiresAt));
+    }
 }

@@ -1,3 +1,4 @@
+using IdentityService.Application.Abstractions;
 using IdentityService.Application.TailorInvitations.IssueTailorInvitation;
 using IdentityService.Application.Tests.Fakes;
 using IdentityService.Domain.Exceptions;
@@ -30,7 +31,7 @@ public sealed class IssueTailorInvitationHandlerTests
             new IssueTailorInvitationCommand("Ana.Gomez@example.com", tailorProfileId.Value));
 
         var invitation = Assert.Single(repository.Invitations);
-        Assert.Equal("token-hash", invitation.TokenHash.Value);
+        Assert.Equal("token-hash-1", invitation.TokenHash.Value);
         Assert.Equal(tailorProfileId, invitation.TailorProfileId);
         Assert.Equal(Now.Add(InvitationLifetime), invitation.ExpiresAt);
         Assert.Equal(invitation.Id, result.InvitationId);
@@ -40,7 +41,7 @@ public sealed class IssueTailorInvitationHandlerTests
 
         var sent = Assert.Single(delivery.Deliveries);
         Assert.Equal("ana.gomez@example.com", sent.Email.Value);
-        Assert.Equal("one-time-secret", sent.RawToken);
+        Assert.Equal("one-time-secret-1", sent.RawToken);
         Assert.Equal(invitation.Id, sent.InvitationId);
     }
 
@@ -67,4 +68,49 @@ public sealed class IssueTailorInvitationHandlerTests
         Assert.Equal(0, tokenGenerator.GenerateCalls);
         Assert.Empty(delivery.Deliveries);
     }
+
+    [Fact]
+    public async Task HandleAsync_SecondInvitationForTheSameProfile_ReissuesInsteadOfCreatingAnother()
+    {
+        var repository = new InMemoryTailorInvitationRepository();
+        var delivery = new RecordingInvitationDelivery();
+        var handler = CreateHandler(repository, new FakeInvitationTokenGenerator(), delivery);
+        var command = new IssueTailorInvitationCommand("ana@example.com", Guid.CreateVersion7());
+
+        var first = await handler.HandleAsync(command);
+        var second = await handler.HandleAsync(command);
+
+        var invitation = Assert.Single(repository.Invitations);
+        Assert.Equal(first.InvitationId, second.InvitationId);
+        Assert.Equal("token-hash-2", invitation.TokenHash.Value);   // the first token no longer matches
+        Assert.Equal(2, delivery.Deliveries.Count);
+        Assert.Equal("one-time-secret-2", delivery.Deliveries[1].RawToken);
+    }
+
+    [Fact]
+    public async Task HandleAsync_WhenDeliveryFails_KeepsTheInvitationSoItCanBeReissued()
+    {
+        var repository = new InMemoryTailorInvitationRepository();
+        var tokenGenerator = new FakeInvitationTokenGenerator();
+        var command = new IssueTailorInvitationCommand("ana@example.com", Guid.CreateVersion7());
+
+        var failing = CreateHandler(repository, tokenGenerator, new FailingInvitationDelivery());
+        await Assert.ThrowsAsync<InvalidOperationException>(() => failing.HandleAsync(command));
+
+        Assert.Single(repository.Invitations);
+        var delivery = new RecordingInvitationDelivery();
+        var working = CreateHandler(repository, tokenGenerator, delivery);
+
+        await working.HandleAsync(command);
+
+        Assert.Single(repository.Invitations);
+        var sent = Assert.Single(delivery.Deliveries);
+        Assert.Equal("one-time-secret-2", sent.RawToken);
+    }
+
+    private static IssueTailorInvitationHandler CreateHandler(
+        InMemoryTailorInvitationRepository repository,
+        FakeInvitationTokenGenerator tokenGenerator,
+        IInvitationDelivery delivery) =>
+        new(repository, new CountingUnitOfWork(), tokenGenerator, delivery, new FixedTimeProvider(Now), InvitationLifetime);
 }

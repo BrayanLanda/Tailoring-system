@@ -119,6 +119,10 @@ test/
 - IdentityService vincula la cuenta con el ID de perfil `Tailor`, que es externo para IdentityService. TailorService solo guarda su perfil de negocio y no guarda credenciales.
 - Gateway y APIs validan tokens. Las APIs también aplican autorización, incluso si el tráfico suele pasar por Gateway.
 - La cuenta admin inicial se provisiona mediante configuración/secrets de despliegue, sin credenciales predeterminadas en código.
+- Hay **una sola invitación por perfil de sastre**. Reemitir (`Reissue`) reemplaza el hash del token, el correo y la vigencia, así que el enlace anterior deja de funcionar y falla con el mismo mensaje genérico de un token incorrecto. No se puede reemitir una invitación ya aceptada. Si el correo falla tras guardar, el admin vuelve a invitar.
+- La verificación del token de invitación vive en el agregado: `Accept(presentedHash, acceptedAt)` compara en tiempo constante y se hace antes que cualquier comprobación de estado, con un mensaje genérico, para no revelar si una invitación existe, expiró o ya se usó.
+- Solo se persiste el hash del token. El token en claro viaja únicamente por el puerto `IInvitationDelivery`: nunca se guarda, se registra en logs ni se incluye en eventos.
+- Infrastructure (pendiente): índice único sobre `tailor_profile_id` para garantizar una sola invitación por perfil, y columna `Version` para concurrencia.
 
 ## Antes de terminar un cambio
 Verifica que compila (`dotnet build`), que las pruebas pasan (`dotnet test`) y que, si tocaste un contrato de evento, los servicios que lo consumen siguen siendo compatibles.

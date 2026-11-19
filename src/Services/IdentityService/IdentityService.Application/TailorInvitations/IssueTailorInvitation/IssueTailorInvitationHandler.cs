@@ -46,14 +46,25 @@ public sealed class IssueTailorInvitationHandler
         var issuedAt = _timeProvider.GetUtcNow();
         var expiresAt = issuedAt.Add(_invitationLifetime);
         var token = _tokenGenerator.Generate();
-        var invitation = TailorInvitation.Create(
-            email.Value,
-            tailorProfileId,
-            token.Hash,
-            issuedAt,
-            expiresAt);
 
-        await _repository.AddAsync(invitation, cancellationToken);
+        // One invitation per tailor profile: inviting again replaces the previous token.
+        var invitation = await _repository.GetByTailorProfileIdAsync(tailorProfileId, cancellationToken);
+        if (invitation is null)
+        {
+            invitation = TailorInvitation.Create(
+                email.Value,
+                tailorProfileId,
+                token.Hash,
+                issuedAt,
+                expiresAt);
+
+            await _repository.AddAsync(invitation, cancellationToken);
+        }
+        else
+        {
+            invitation.Reissue(email, token.Hash, issuedAt, expiresAt);
+        }
+
         await _unitOfWork.SaveChangesAsync(cancellationToken);
         await _delivery.DeliverAsync(email, invitation.Id, token.RawValue, expiresAt, cancellationToken);
 

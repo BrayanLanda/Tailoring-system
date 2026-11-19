@@ -1,4 +1,5 @@
 using IdentityService.Domain.Entities;
+using IdentityService.Domain.Events;
 using IdentityService.Domain.Exceptions;
 using IdentityService.Domain.ValueObjects;
 
@@ -109,6 +110,91 @@ public sealed class TailorInvitationTests
 
         // Someone without the token must not learn whether the invitation expired.
         Assert.Equal(duringValidity.Message, afterExpiry.Message);
+    }
+
+    private static readonly InvitationTokenHash NewHash = InvitationTokenHash.Of("new-hash");
+
+    [Fact]
+    public void Reissue_ReplacesTheTokenHash_SoTheOldTokenNoLongerAccepts()
+    {
+        var invitation = CreateInvitation();
+
+        invitation.Reissue(
+            EmailAddress.Of("ana@example.com"), NewHash, IssuedAt.AddHours(2), IssuedAt.AddDays(2));
+
+        Assert.Throws<DomainException>(() => invitation.Accept(CorrectHash, IssuedAt.AddHours(3)));
+        Assert.Null(invitation.AcceptedAt);
+    }
+
+    [Fact]
+    public void Reissue_TheNewTokenCanBeAccepted()
+    {
+        var invitation = CreateInvitation();
+        invitation.Reissue(
+            EmailAddress.Of("ana@example.com"), NewHash, IssuedAt.AddHours(2), IssuedAt.AddDays(2));
+
+        invitation.Accept(NewHash, IssuedAt.AddHours(3));
+
+        Assert.Equal(IssuedAt.AddHours(3), invitation.AcceptedAt);
+    }
+
+    [Fact]
+    public void Reissue_AnExpiredInvitation_StartsANewValidityPeriod()
+    {
+        var invitation = CreateInvitation();              // it expires one day after IssuedAt
+        var reissuedAt = IssuedAt.AddDays(3);             // so it is long expired by now
+
+        invitation.Reissue(EmailAddress.Of("ana@example.com"), NewHash, reissuedAt, reissuedAt.AddDays(1));
+        invitation.Accept(NewHash, reissuedAt.AddHours(1));
+
+        Assert.NotNull(invitation.AcceptedAt);
+    }
+
+    [Fact]
+    public void Reissue_CanChangeTheEmail()
+    {
+        var invitation = CreateInvitation();
+
+        invitation.Reissue(
+            EmailAddress.Of("  Ana.New@Example.com "), NewHash, IssuedAt.AddHours(1), IssuedAt.AddDays(2));
+
+        Assert.Equal("ana.new@example.com", invitation.Email.Value);
+    }
+
+    [Fact]
+    public void Reissue_AfterAcceptance_ThrowsDomainException()
+    {
+        var invitation = CreateInvitation();
+        invitation.Accept(CorrectHash, IssuedAt.AddHours(1));
+
+        Assert.Throws<DomainException>(() => invitation.Reissue(
+            EmailAddress.Of("ana@example.com"), NewHash, IssuedAt.AddHours(2), IssuedAt.AddDays(2)));
+    }
+
+    [Fact]
+    public void Reissue_ExpirationNotAfterIssue_ThrowsAndKeepsTheCurrentInvitation()
+    {
+        var invitation = CreateInvitation();
+
+        Assert.Throws<DomainException>(() => invitation.Reissue(
+            EmailAddress.Of("ana@example.com"), NewHash, IssuedAt.AddHours(2), IssuedAt.AddHours(2)));
+
+        // The original token still works: a rejected reissue changed nothing.
+        invitation.Accept(CorrectHash, IssuedAt.AddHours(3));
+        Assert.NotNull(invitation.AcceptedAt);
+    }
+
+    [Fact]
+    public void Reissue_RaisesTailorInvitationReissuedWithTheSameInvitationId()
+    {
+        var invitation = CreateInvitation();
+
+        invitation.Reissue(
+            EmailAddress.Of("ana@example.com"), NewHash, IssuedAt.AddHours(2), IssuedAt.AddDays(2));
+
+        var reissued = invitation.DomainEvents.OfType<TailorInvitationReissued>().Single();
+        Assert.Equal(invitation.Id, reissued.InvitationId);
+        Assert.Equal(IssuedAt.AddDays(2), reissued.ExpiresAt);
     }
 
     private static TailorInvitation CreateInvitation() => TailorInvitation.Create(

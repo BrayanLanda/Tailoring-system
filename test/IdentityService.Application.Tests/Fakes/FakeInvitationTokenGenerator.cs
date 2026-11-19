@@ -10,6 +10,8 @@ internal sealed class FakeInvitationTokenGenerator : IInvitationTokenGenerator
     public GeneratedInvitationToken Generate()
     {
         GenerateCalls++;
-        return new GeneratedInvitationToken("one-time-secret", InvitationTokenHash.Of("token-hash"));
+        return new GeneratedInvitationToken(
+            $"one-time-secret-{GenerateCalls}",
+            InvitationTokenHash.Of($"token-hash-{GenerateCalls}"));
     }
 }
