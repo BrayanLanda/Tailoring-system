@@ -16,6 +16,7 @@ public sealed class TailorInvitationTests
         var invitation = TailorInvitation.Create(
             "  Ana.Gomez@Example.com ",
             tailorProfileId,
+            InvitationTokenHash.Of("hash"),
             IssuedAt,
             IssuedAt.AddDays(2));
 
@@ -34,6 +35,7 @@ public sealed class TailorInvitationTests
         Assert.Throws<DomainException>(() => TailorInvitation.Create(
             email,
             new TailorProfileId(Guid.CreateVersion7()),
+            InvitationTokenHash.Of("hash"),
             IssuedAt,
             IssuedAt.AddDays(1)));
     }
@@ -44,6 +46,7 @@ public sealed class TailorInvitationTests
         Assert.Throws<DomainException>(() => TailorInvitation.Create(
             "ana@example.com",
             new TailorProfileId(Guid.CreateVersion7()),
+            InvitationTokenHash.Of("hash"),
             IssuedAt,
             IssuedAt));
     }
@@ -83,6 +86,7 @@ public sealed class TailorInvitationTests
     private static TailorInvitation CreateInvitation() => TailorInvitation.Create(
         "ana@example.com",
         new TailorProfileId(Guid.CreateVersion7()),
+        InvitationTokenHash.Of("hash"),
         IssuedAt,
         IssuedAt.AddDays(1));
 }

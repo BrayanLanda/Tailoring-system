@@ -12,6 +12,7 @@ public sealed class TailorInvitation : AggregateRoot
     public TailorInvitationId Id { get; private set; }
     public EmailAddress Email { get; private set; }
     public TailorProfileId TailorProfileId { get; private set; }
+    public InvitationTokenHash TokenHash { get; private set; }
     public DateTimeOffset IssuedAt { get; private set; }
     public DateTimeOffset ExpiresAt { get; private set; }
     public DateTimeOffset? AcceptedAt { get; private set; }
@@ -19,6 +20,7 @@ public sealed class TailorInvitation : AggregateRoot
     public static TailorInvitation Create(
         string email,
         TailorProfileId tailorProfileId,
+        InvitationTokenHash tokenHash,
         DateTimeOffset issuedAt,
         DateTimeOffset expiresAt)
     {
@@ -35,6 +37,7 @@ public sealed class TailorInvitation : AggregateRoot
             Id = TailorInvitationId.New(),
             Email = normalizedEmail,
             TailorProfileId = tailorProfileId,
+            TokenHash = tokenHash,
             IssuedAt = issuedAt,
             ExpiresAt = expiresAt
         };

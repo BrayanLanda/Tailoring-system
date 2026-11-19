@@ -2,6 +2,7 @@
   <Folder Name="/src/" />
   <Folder Name="/src/Services/" />
   <Folder Name="/src/Services/IdentityService/">
+    <Project Path="src/Services/IdentityService/IdentityService.Application/IdentityService.Application.csproj" />
     <Project Path="src/Services/IdentityService/IdentityService.Domain/IdentityService.Domain.csproj" />
   </Folder>
   <Folder Name="/src/Services/TailorService/">
@@ -20,6 +21,7 @@
   </Folder>
   <Folder Name="/test/">
     <Project Path="test/WorkOrderService.Domain.Tests/WorkOrderService.Domain.Tests.csproj" />
+    <Project Path="test/IdentityService.Application.Tests/IdentityService.Application.Tests.csproj" />
     <Project Path="test/IdentityService.Domain.Tests/IdentityService.Domain.Tests.csproj" />
     <Project Path="test/TailorService.Api.Tests/TailorService.Api.Tests.csproj" />
     <Project Path="test/TailorService.Application.Tests/TailorService.Application.Tests.csproj" />
