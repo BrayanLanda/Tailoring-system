@@ -14,6 +14,11 @@ internal sealed class InMemoryTailorInvitationRepository : ITailorInvitationRepo
         return Task.CompletedTask;
     }
 
+    public Task<TailorInvitation?> GetByIdAsync(
+        TailorInvitationId id,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult(Invitations.FirstOrDefault(invitation => invitation.Id == id));
+
     public Task<TailorInvitation?> GetByTailorProfileIdAsync(
         TailorProfileId tailorProfileId,
         CancellationToken cancellationToken = default) =>

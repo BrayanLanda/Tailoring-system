@@ -7,4 +7,7 @@ public interface IInvitationTokenGenerator
     GeneratedInvitationToken Generate();
 }
 
-public sealed record GeneratedInvitationToken(string RawValue, InvitationTokenHash Hash);
+public sealed record GeneratedInvitationToken(string RawValue, InvitationTokenHash Hash)
+{
+    public override string ToString() => $"{nameof(GeneratedInvitationToken)} {{ RawValue = [redacted] }}";
+}

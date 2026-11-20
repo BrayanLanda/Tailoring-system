@@ -7,6 +7,7 @@ namespace IdentityService.Domain.Entities;
 
 public sealed class TailorInvitation : AggregateRoot
 {
+    public const string NotValidMessage = "The invitation is not valid";
     private TailorInvitation() { }
 
     public TailorInvitationId Id { get; private set; }
@@ -52,7 +53,7 @@ public sealed class TailorInvitation : AggregateRoot
     public void Accept(InvitationTokenHash presentedTokenHash, DateTimeOffset acceptedAt)
     {
         if (!TokenHash.Matches(presentedTokenHash))
-            throw new DomainException("The invitation is not valid.");
+            throw new DomainException(NotValidMessage);
 
         if (AcceptedAt is not null)
             throw new DomainException("The invitation has already been accepted.");

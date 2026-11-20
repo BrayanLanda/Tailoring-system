@@ -10,4 +10,8 @@ public interface ITailorInvitationRepository
     Task<TailorInvitation?> GetByTailorProfileIdAsync(
         TailorProfileId tailorProfileId,
         CancellationToken cancellationToken = default);
+    
+    Task<TailorInvitation?> GetByIdAsync(
+        TailorInvitationId id,
+        CancellationToken cancellationToken = default);
 }
