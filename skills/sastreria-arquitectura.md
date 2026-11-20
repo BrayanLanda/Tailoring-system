@@ -73,6 +73,8 @@ sastreria/
     - No hay autorregistro público de sastres: un admin provisionado crea primero el perfil `Tailor` y luego invita el correo de esa persona con rol `Tailor`. La invitación es de un solo uso y expira; al aceptarla, la persona configura su contraseña local. El rol admin no se asigna mediante invitaciones de sastre.
     - El Gateway valida tokens y enruta. Cada API también valida los tokens y aplica autorización para protegerse de llamadas que eviten el Gateway.
     - `TailorService` conserva solo datos propios del negocio; no almacena contraseñas ni implementa login. `IdentityService` vincula la cuenta con el ID de perfil `Tailor`, que es un ID externo para IdentityService.
+12. **Desarrollo local**: `docker-compose.yml` en la raíz con un PostgreSQL por servicio (`work-order-db` en el puerto 5433, `tailor-db` en el 5434; el siguiente usará el 5435), imagen `postgres:17` y `healthcheck`. Las credenciales van en `.env` (ignorado por git) y `.env.example` documenta las variables. Los puertos externos distintos evitan chocar con un PostgreSQL local en el 5432.
+13. **Pruebas por capa**: dominio y Application con pruebas unitarias rápidas (sin base de datos); persistencia con pruebas de integración contra PostgreSQL real (Testcontainers); manejo de errores de la API con pruebas unitarias del `ApiExceptionHandler`. Detalle en `sastreria-nuevo-servicio`.
 
 ## Frontend Angular
 - Es una SPA, así que no tiene servidor propio (a diferencia de Next.js): usar Authorization Code con PKCE para OIDC; no guardar client secrets en Angular.
@@ -90,6 +92,14 @@ sastreria/
 
 Avanzar **paso a paso**: el usuario quiere guía incremental, con comandos listos para copiar y una breve explicación de por qué, confirmando el resultado antes de seguir.
 
+## Estado actual (actualizar al cerrar cada paso)
+- **WorkOrderService**: Domain completo (boleta, precio, abonos, garantías con compensación autorizada, trabajos, domain events); Application con `CreateWorkOrder`, `SetWorkOrderPrice` y `RegisterPayment`; Infrastructure con EF Core, migraciones, serial con secuencia y concurrencia optimista; API con esos tres endpoints y manejo central de errores. **Pendiente**: casos de uso de asignar sastre, iniciar trabajo, entregas y garantías; `GET /api/work-orders/{id}` y consultas; publicación de eventos (outbox).
+- **TailorService**: Domain (`Tailor` con registrar, desactivar y reactivar, y sus eventos); Application (`RegisterTailor`, `GetTailorById`); Infrastructure (EF Core, migración, concurrencia); API de registro y consulta; pruebas de integración para persistencia y conflicto de concurrencia. **Pendiente**: casos de uso/endpoints de desactivar/reactivar, listar sastres activos y autorización.
+- **IdentityService**: Domain y Application de las invitaciones de sastre (emitir, reemitir, aceptar). **Pendiente**: Infrastructure, API, ASP.NET Core Identity, OpenIddict.
+- **Pendiente por completo**: Contracts, RabbitMQ y outbox; SettlementService; Gateway; Angular; Dockerfiles y Kubernetes.
+
 ## Decisiones abiertas
 - Provisionamiento seguro de la cuenta admin inicial (secrets/configuración de despliegue; nunca credenciales predeterminadas en código).
 - Roles y políticas concretas para recepción, sastre y admin, incluyendo cómo se vincula la identidad con el perfil `Tailor`.
+- Cómo valida `WorkOrderService` que un sastre existe y está activo al asignar: llamada HTTP a `TailorService` (con caché en Redis) frente a **eventos (`TailorRegistered`, `TailorDeactivated`, `TailorReactivated`) y una copia local** de los sastres activos. Recomendación: eventos con copia local (asignar sigue funcionando si `TailorService` cae; el riesgo de consistencia eventual es bajo).
+- Cuáles domain events se publican como integration events en `Contracts`, y la forma exacta del contrato (sin datos personales ni secretos).

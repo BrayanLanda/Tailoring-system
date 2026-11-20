@@ -28,7 +28,9 @@ src/Services/WorkOrderService/
 └── WorkOrderService.Api/              # Program.cs, endpoints, DI, health checks, Dockerfile
 test/
 ├── WorkOrderService.Domain.Tests/
-└── WorkOrderService.Application.Tests/
+├── WorkOrderService.Application.Tests/            # con Fakes/
+├── WorkOrderService.Infrastructure.IntegrationTests/  # PostgreSQL real (Testcontainers)
+└── WorkOrderService.Api.Tests/                    # manejo de errores de la API
 ```
 
 **Regla de dependencias** (las flechas apuntan hacia adentro, nunca al revés):
@@ -43,7 +45,7 @@ test/
    - **Un agregado referencia a otro solo por ID** (`WorkOrderId`, `TailorId`), nunca por objeto.
 3. **Modelo rico, no anémico**: las reglas viven en el agregado. Nada de `workOrder.Status = ...` desde fuera; se usan métodos con intención (`workOrder.AssignTo(tailorId)`, `workOrder.MarkDeliveredByTailor()`) que validan la transición y lanzan una excepción de dominio si es ilegal.
 4. **Constructores protegidos**: las entidades se crean con *factory methods* estáticos (`WorkOrder.Create(...)`) que dejan el objeto siempre válido. Setters `private`. EF Core usa un constructor privado sin parámetros.
-5. **Value objects** inmutables (`record`) para conceptos sin identidad: `Money`, `SerialNumber`, `PhoneNumber`, `AlterationJob`, `WarrantyCompensation`, `Percentage`. Se validan al crearse. El dinero nunca es un `decimal` suelto en el dominio.
+5. **Value objects** inmutables, declarados como **`sealed record` (clase), nunca `struct`**: un `struct` siempre puede crearse con `default` y saltarse la validación. Solo los identificadores tipados son `readonly record struct`. Cada value object con reglas tiene sus propias pruebas. Para conceptos sin identidad: `Money`, `SerialNumber`, `PhoneNumber`, `AlterationJob`, `WarrantyCompensation`, `Percentage` (y en Identity: `EmailAddress`, `InvitationTokenHash`). Se validan al crearse. El dinero nunca es un `decimal` suelto en el dominio.
 6. **Identificadores tipados** (`WorkOrderId`, `TailorId`) en vez de `Guid` sueltos, para no mezclarlos.
 7. **Domain events** (ej. `WorkOrderCreated`) los levanta el agregado en una lista interna. Se despachan al guardar. **No son lo mismo** que los *integration events* de `Contracts`: el handler de Application traduce un domain event a un integration event y lo publica por el outbox.
 8. **Repositorios**: una interfaz por agregado raíz, definida en `Domain`, implementada en `Infrastructure`. Solo cargan y guardan agregados completos.
@@ -60,8 +62,16 @@ test/
     - **Domain events**: `record` que implementa `IDomainEvent`, en `Domain/Events`. El agregado hereda de `AggregateRoot` y los levanta con `Raise(...)` solo cuando la operación tuvo éxito (si falla, no se levanta nada). Llevan IDs y los datos que otros servicios necesitan; la hora solo si el dominio la conoce (el outbox sella el resto). Infrastructure debe ignorar `DomainEvents` al mapear con EF Core.
     - Operaciones que pueden reintentarse (ej. `RegisterPayment`) son idempotentes mediante un ID que llega de fuera (`PaymentId`); repetir el mismo ID no duplica nada.
     - Los enums empiezan en `1`, para que el `0` por defecto nunca sea un estado válido.
+    - **Una operación rechazada no cambia nada**: primero se validan todas las reglas y después se modifica el estado (ej. `Reissue` valida antes de reemplazar el token; una reemisión fallida deja la invitación como estaba).
+    - **Idempotencia por estado**: repetir una operación sobre algo que ya está en su estado final (ej. `Deactivate` sobre un sastre inactivo) no hace nada y no levanta evento. Es el equivalente, cuando no hay un ID que comparar, a la idempotencia por ID de los abonos.
+    - Una regla vive **en un solo lugar**: el agregado. Si el handler la repite, se quita del handler, pero solo después de escribir la prueba que protege ese comportamiento.
     - Los campos de fecha de hitos importantes (ej. `DeliveredByTailorAt`) se guardan en el agregado; la liquidación depende de ellos.
 13. **TDD**: cada regla nueva empieza con una prueba que falla (rojo), luego el mínimo código para que pase (verde). Comprobar siempre que la prueba falla antes de escribir el código.
+    - **Refactor**: si el comportamiento no cambia, las pruebas deben estar en verde antes y después; son la red de seguridad.
+    - **Cambio de firma**: se actualizan primero las pruebas; el rojo es de compilación y el compilador lista todo lo que se rompe.
+    - Las pruebas de integración de código ya existente *verifican*, no son rojo-primero. En cambio, la prueba de un bug nuevo (ej. la concurrencia) sí empieza en **rojo real**: falla en ejecución mostrando el bug.
+    - Una prueba que pasaría por otro motivo no demuestra nada: se afirma el efecto o mensaje específico (ej. `Assert.Contains("no charge", ex.Message)`).
+    - Una prueba solo puede usar variables declaradas dentro de ella; si menciona `workOrder`, debe haber un `var workOrder = ...` arriba.
 
 14. **Application (casos de uso)**:
     - Una carpeta por caso de uso: `Application/WorkOrders/CreateWorkOrder/` con `Command` (record), `Handler` (método `HandleAsync`) y `Result` (record).
@@ -69,6 +79,10 @@ test/
     - La hora se pide con `TimeProvider` (nunca `DateTime.UtcNow`) y el handler se la pasa al agregado.
     - El handler convierte los datos primitivos a value objects **antes** de pedir recursos con efecto (ej. el serial), para no gastar números por entradas inválidas.
     - El handler orquesta (cargar, ejecutar el método del agregado, guardar); **no contiene reglas de negocio**.
+    - Los efectos externos (enviar un correo, crear una cuenta, generar o hashear tokens) son **puertos** en `Application/Abstractions` (`IInvitationDelivery`, `IAccountProvisioner`, `IInvitationTokenHasher`) con fakes en las pruebas.
+    - **Orden**: primero el agregado valida (token, estado, expiración); solo después se ejecutan efectos externos. Nunca crear una cuenta, enviar un correo ni cobrar antes de que el agregado haya aceptado la operación.
+    - **No filtrar existencia**: "no existe" y "datos incorrectos" producen exactamente el mismo mensaje cuando la diferencia ayudaría a un atacante (ej. `TailorInvitation.NotValidMessage`).
+    - Los errores de entrada que valida otro componente (ej. la política de contraseñas de Identity) no son `DomainException`: usan una excepción propia con la lista de errores (`AccountCreationFailedException`).
     - Pruebas de handlers con **fakes escritos a mano** en `test/<Service>.Application.Tests/Fakes/` (repositorio en memoria, serial secuencial, unit of work contador, `TimeProvider` fijo). No se usan librerías de mocks.
 
 15. **Pruebas de integración (persistencia)**:
@@ -93,15 +107,18 @@ test/
     - Los mensajes de las excepciones llegan al cliente en `detail`: deben ser legibles y no filtrar tipos internos (ej. usar `id.Value`, no `id`).
     - El mapeo de errores se prueba con pruebas unitarias del handler (`DefaultHttpContext`), sin servidor ni base de datos.
 
+18. **Secretos**: un `record` imprime todas sus propiedades en `ToString()`, y eso llega a los logs y a los mensajes de las pruebas que fallan. Todo comando, resultado o evento que contenga un secreto (contraseña, token en claro) sobrescribe `ToString()` ocultándolo y lleva una prueba que lo verifique (`SecretRedactionTests`). Los secretos nunca viajan en domain events ni en integration events.
+
 ## Pasos para crear un servicio
-1. Crear los cuatro proyectos (`Api` con `dotnet new webapi`, el resto con `dotnet new classlib`), agregarlos a la solución y configurar las referencias según la regla de dependencias.
+1. Crear los cuatro proyectos (`Api` con `dotnet new webapi`, el resto con `dotnet new classlib`), agregarlos a la solución y configurar las referencias según la regla de dependencias. Los proyectos de prueba se crean copiando el `.csproj` de otro proyecto de pruebas (evita los errores de versiones centralizadas) y agregándole su `ProjectReference`.
 2. Borrar de cada `.csproj` lo que ya define `Directory.Build.props` (`TargetFramework`, `Nullable`, `ImplicitUsings`) y quitar `Class1.cs`.
 3. Agregar paquetes con `dotnet add package`; la versión queda en `Directory.Packages.props`. No escribas versiones dentro del `.csproj`.
-4. Empezar siempre por el **dominio** (agregado, value objects, reglas) y sus pruebas unitarias, antes de tocar BD o endpoints.
-5. Application: casos de uso e interfaces. Infrastructure: EF Core con Npgsql y su **propia base de datos** (`<name>_db`).
-6. Api: endpoints, health check (`/health`), inyección de dependencias.
-7. Si publica eventos: MassTransit con RabbitMQ y **outbox de EF Core**. Si los consume: consumidores idempotentes con reintentos y DLQ.
-8. `Dockerfile` multi-stage en el proyecto `Api` y entrada en `docker-compose.yml` con su PostgreSQL, variables de entorno y `depends_on` con health checks.
+4. **Domain** con TDD: agregado, value objects, domain events y reglas, solo con pruebas unitarias.
+5. **Application** con TDD: un caso de uso a la vez, con fakes escritos a mano.
+6. **Infrastructure**: PostgreSQL propio en `docker-compose.yml`; EF Core con Npgsql y `snake_case`; mapeo y migración; columna `Version` (concurrencia); repositorio y unit of work. Después las **pruebas de integración** con Testcontainers, incluida la de concurrencia, que empieza en rojo real.
+7. **Api**: endpoints con DTOs simples, `ApiExceptionHandler` central, health check (`/health`) y `public partial class Program;` al final de `Program.cs`.
+8. Si publica eventos: MassTransit con RabbitMQ y **outbox de EF Core**. Si los consume: consumidores idempotentes con reintentos y DLQ.
+9. `Dockerfile` multi-stage en el proyecto `Api` y entrada del servicio en `docker-compose.yml` con variables de entorno y `depends_on` con health checks.
 
 ## Reglas de código
 - Validar toda entrada en el borde (endpoints), no confiar en el cliente.
@@ -110,6 +127,9 @@ test/
 - Migraciones EF versionadas en git; nunca editar una migración ya aplicada.
 - Logs estructurados con Serilog; incluir el `SerialNumber` de la work order o el id de correlación en cada log relevante.
 - No exponer entidades de dominio en la API; usar DTOs.
+- Migraciones con `dotnet ef` instalado como herramienta local (`.config/dotnet-tools.json`). La cadena de conexión de diseño se lee de la variable de entorno `ConnectionStrings__<Name>Db` mediante una `IDesignTimeDbContextFactory`. Siempre se lee el código de la migración generada antes de aplicarla.
+- Una cadena de conexión por servicio (`ConnectionStrings:<Name>Db`); los secretos van en user-secrets o variables de entorno.
+- Un puerto externo de PostgreSQL distinto por servicio en `docker-compose.yml` (WorkOrder 5433, Tailor 5434, siguientes 5435...).
 
 ## Consideraciones de IdentityService
 - IdentityService es un servicio propio en `src/Services/IdentityService` con PostgreSQL, ASP.NET Core Identity para cuentas/contraseñas/roles y OpenIddict para OAuth 2.0/OIDC.
@@ -122,7 +142,12 @@ test/
 - Hay **una sola invitación por perfil de sastre**. Reemitir (`Reissue`) reemplaza el hash del token, el correo y la vigencia, así que el enlace anterior deja de funcionar y falla con el mismo mensaje genérico de un token incorrecto. No se puede reemitir una invitación ya aceptada. Si el correo falla tras guardar, el admin vuelve a invitar.
 - La verificación del token de invitación vive en el agregado: `Accept(presentedHash, acceptedAt)` compara en tiempo constante y se hace antes que cualquier comprobación de estado, con un mensaje genérico, para no revelar si una invitación existe, expiró o ya se usó.
 - Solo se persiste el hash del token. El token en claro viaja únicamente por el puerto `IInvitationDelivery`: nunca se guarda, se registra en logs ni se incluye en eventos.
-- Infrastructure (pendiente): índice único sobre `tailor_profile_id` para garantizar una sola invitación por perfil, y columna `Version` para concurrencia.
+- **Estado**: el agregado `TailorInvitation` (`Create`, `Reissue`, `Accept`) y los casos de uso `IssueTailorInvitation` y `AcceptTailorInvitation` están hechos con sus pruebas. Infrastructure, API, ASP.NET Core Identity y OpenIddict están pendientes.
+- Aceptar una invitación (`AcceptTailorInvitationHandler`): el orden es `Accept` (valida token, estado y expiración) → crear la cuenta → guardar. Nunca crear la cuenta antes de `Accept`. "La invitación no existe" y "el token es incorrecto" devuelven el mismo mensaje (`TailorInvitation.NotValidMessage`).
+- El hash del token usa un algoritmo estándar de la plataforma (SHA-256 sobre un token aleatorio de alta entropía generado con `RandomNumberGenerator`) y se compara en tiempo constante (`CryptographicOperations.FixedTimeEquals`). Sin implementaciones propias.
+- Infrastructure (pendiente): índice único sobre `tailor_profile_id` (una sola invitación por perfil), columna `Version` para concurrencia y un índice único sobre el correo y sobre el vínculo cuenta–perfil de sastre, para que dos aceptaciones simultáneas no creen dos cuentas.
+- Infrastructure (pendiente): la creación de la cuenta (ASP.NET Core Identity) y la aceptación de la invitación se confirman en **una sola transacción** (mismo `DbContext`, sin autoguardado de `UserManager`), para no dejar una cuenta sin su invitación aceptada.
+- Verificar con pruebas de integración que una contraseña débil deja la invitación **todavía válida** para reintentar (con el fake en memoria no se puede comprobar).
 
 ## Antes de terminar un cambio
 Verifica que compila (`dotnet build`), que las pruebas pasan (`dotnet test`) y que, si tocaste un contrato de evento, los servicios que lo consumen siguen siendo compatibles.

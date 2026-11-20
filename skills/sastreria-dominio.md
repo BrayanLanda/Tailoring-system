@@ -48,10 +48,12 @@ El negocio se explica en español, pero **todo identificador en código, BD, API
 
 La asignación se registra en `WorkOrder.TailorId`: `WorkOrderService` cambia la asignación y el estado de trabajo mediante `WorkOrder.AssignTo(...)`. `TailorService` es dueño del perfil y disponibilidad del sastre; antes de asignar, WorkOrderService valida el sastre a través del servicio, nunca consultando su base de datos directamente.
 
-La disponibilidad del sastre se modela solo como activo/inactivo. No se manejan horarios ni calendarios.
-Un administrador crea el perfil del sastre y este queda activo inicialmente. La cuenta de acceso no es necesaria para el MVP; si se incorpora, pertenece a IdentityService y se vincula al perfil por ID, sin guardar credenciales en TailorService.
+La disponibilidad del sastre se modela solo como activo/inactivo. No se manejan horarios ni calendarios. Desactivar o reactivar es idempotente (repetirlo no cambia nada ni genera otro evento); cada cambio real publica `TailorDeactivated` o `TailorReactivated`, para que otros servicios sepan quién está activo.
 
-Value objects: `Money`, `SerialNumber`, `PhoneNumber`, `Percentage`.
+**Acceso al sistema del sastre**: el administrador lo invita por correo. Hay una sola invitación vigente por perfil de sastre: volver a invitar anula la anterior (el enlace viejo deja de funcionar). La invitación expira y se usa una sola vez; no se puede reinvitar a un sastre que ya aceptó. Al aceptar, la persona crea su contraseña y su cuenta queda vinculada al perfil por ID.
+Un administrador crea el perfil del sastre y este queda activo inicialmente. Las cuentas pertenecen a IdentityService; no hay autorregistro público de sastres ni se guardan credenciales en TailorService.
+
+Value objects: `Money`, `SerialNumber`, `PhoneNumber`, `AlterationJob`, `WarrantyCompensation`, `Percentage`.
 
 ## Dos carriles independientes
 Una boleta avanza por dos máquinas de estado separadas. Modelarlas por separado evita estados imposibles, porque el pago del cliente no depende del trabajo del sastre.
