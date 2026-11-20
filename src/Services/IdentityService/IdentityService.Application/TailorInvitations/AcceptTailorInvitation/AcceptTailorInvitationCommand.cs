@@ -1,5 +1,4 @@
-namespace IdentityService.Application.TailorInvitations.AcceptTailorInvitation
-;
+namespace IdentityService.Application.TailorInvitations.AcceptTailorInvitation;
 
 public sealed record AcceptTailorInvitationCommand(Guid InvitationId, string Token, string Password)
 {

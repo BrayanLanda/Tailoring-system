@@ -1,3 +1,4 @@
+using IdentityService.Application.Abstractions;
 using IdentityService.Domain.ValueObjects;
 
 namespace IdentityService.Application.Tests.Fakes;

@@ -5,17 +5,20 @@ using IdentityService.Domain.Exceptions;
 using IdentityService.Domain.Repositories;
 
 namespace IdentityService.Application.TailorInvitations.AcceptTailorInvitation;
-    public class AcceptTailorInvitationHandler(
-        ITailorInvitationRepository repository,
-        IUnitOfWork unitOfWork,
-        IInvitationTokenHasher tokenHasher,
-        IAccountProvisioner accounts,
-        TimeProvider timeProvider)
+
+public sealed class AcceptTailorInvitationHandler(
+    ITailorInvitationRepository repository,
+    IUnitOfWork unitOfWork,
+    IInvitationTokenHasher tokenHasher,
+    IAccountProvisioner accounts,
+    TimeProvider timeProvider)
+{
+    public async Task<AcceptTailorInvitationResult> HandleAsync(
+    AcceptTailorInvitationCommand command,
+    CancellationToken cancellationToken = default)
     {
-        public async Task<AcceptTailorInvitationResult> HandleAsync(
-        AcceptTailorInvitationCommand command,
-        CancellationToken cancellationToken = default)
-    {
+        // Every way of being "not valid" answers with the same message, so nobody can tell
+        // whether an invitation exists.
         if (string.IsNullOrWhiteSpace(command.Token))
             throw new DomainException(TailorInvitation.NotValidMessage);
 
@@ -24,6 +27,8 @@ namespace IdentityService.Application.TailorInvitations.AcceptTailorInvitation;
         var invitation = await repository.GetByIdAsync(new Domain.ValueObjects.TailorInvitationId(command.InvitationId), cancellationToken)
             ?? throw new DomainException(TailorInvitation.NotValidMessage);
 
+        // The aggregate checks token, state and expiration. Only then is an account created:
+        // creating it first would leave an account behind for an invitation that was never valid.
         invitation.Accept(presentedHash, timeProvider.GetUtcNow());
 
         var result = await accounts.CreateTailorAccountAsync(
@@ -36,4 +41,4 @@ namespace IdentityService.Application.TailorInvitations.AcceptTailorInvitation;
 
         return new AcceptTailorInvitationResult(invitation.Email);
     }
-    }
+}
