@@ -65,7 +65,9 @@ Las decisiones vigentes de autenticación son cuentas locales con correo y contr
 
 - **Domain:** invitación de sastre vinculada a su `TailorProfileId`; normalización de correo, hash del token, expiración, aceptación de un solo uso y reemisión que invalida el enlace anterior. No se puede reinvitar una cuenta que ya aceptó.
 - **Application:** emitir/reemitir y aceptar invitaciones. La aceptación valida la invitación antes de provisionar la cuenta. Los comandos que contienen contraseña o token ocultan esos valores en `ToString()`.
-- **Pendiente:** persistencia y transacción real, generador/hasher concretos de tokens, entrega de correo, implementación de cuenta con ASP.NET Core Identity, API, OpenIddict, roles y bootstrap seguro del primer administrador.
+- **Infrastructure:** EF Core/Npgsql con `IdentityDbContext`, tokens seguros SHA-256 y aprovisionamiento de cuentas locales con ASP.NET Core Identity (`AppUser`, `AppRole`, rol `Tailor` y vínculo a `TailorProfileId`).
+- **API:** endpoints `POST /api/tailor-invitations` y `POST /api/tailor-invitations/accept`, manejo centralizado de excepciones con `ApiExceptionHandler` y `/health`.
+- **Pendiente:** migraciones para tablas de ASP.NET Core Identity, OpenIddict (OAuth 2.0 / OIDC para tokens de acceso), entrega de correos real, roles adicionales (`Admin`, `Receptionist`) y bootstrap seguro del administrador inicial.
 
 ### Componentes todavía planeados
 

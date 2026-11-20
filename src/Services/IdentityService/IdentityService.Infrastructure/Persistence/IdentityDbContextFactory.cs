@@ -8,8 +8,7 @@ internal sealed class IdentityDbContextFactory : IDesignTimeDbContextFactory<Ide
     public IdentityDbContext CreateDbContext(string[] args)
     {
         var connectionString = Environment.GetEnvironmentVariable("ConnectionStrings__IdentityDb")
-            ?? throw new InvalidOperationException(
-                "Set the ConnectionStrings__IdentityDb environment variable before running EF Core tools.");
+            ?? "Host=localhost;Port=5435;Database=identity_db;Username=sastreria;Password=sastreria";
 
         var options = new DbContextOptionsBuilder<IdentityDbContext>()
             .UseNpgsql(connectionString)
