@@ -4,6 +4,7 @@
   <Folder Name="/src/Services/IdentityService/">
     <Project Path="src/Services/IdentityService/IdentityService.Application/IdentityService.Application.csproj" />
     <Project Path="src/Services/IdentityService/IdentityService.Domain/IdentityService.Domain.csproj" />
+    <Project Path="src/Services/IdentityService/IdentityService.Infrastructure/IdentityService.Infrastructure.csproj" />
   </Folder>
   <Folder Name="/src/Services/TailorService/">
     <Project Path="src/Services/TailorService/TailorService.Api/TailorService.Api.csproj" />
@@ -23,6 +24,7 @@
     <Project Path="test/WorkOrderService.Domain.Tests/WorkOrderService.Domain.Tests.csproj" />
     <Project Path="test/IdentityService.Application.Tests/IdentityService.Application.Tests.csproj" />
     <Project Path="test/IdentityService.Domain.Tests/IdentityService.Domain.Tests.csproj" />
+    <Project Path="test/IdentityService.Infrastructure.IntegrationTests/IdentityService.Infrastructure.IntegrationTests.csproj" />
     <Project Path="test/TailorService.Api.Tests/TailorService.Api.Tests.csproj" />
     <Project Path="test/TailorService.Application.Tests/TailorService.Application.Tests.csproj" />
     <Project Path="test/TailorService.Domain.Tests/TailorService.Domain.Tests.csproj" />
