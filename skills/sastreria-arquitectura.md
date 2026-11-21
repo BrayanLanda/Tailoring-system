@@ -15,7 +15,7 @@ El negocio es pequeño y un monolito modular sería más simple. Se eligen **mic
 - .NET 10 (SDK fijado en `global.json`), C#, ASP.NET Core Web API
 - Angular (CLI 22.x)
 - PostgreSQL, **una base de datos por servicio**, nunca compartida
-- RabbitMQ para eventos. La librería o el mecanismo de mensajería está **por decidir** (MassTransit v9 es comercial; ver *Decisiones abiertas*).
+- RabbitMQ para eventos; `RabbitMQ.Client` con un outbox propio en cada servicio que publique eventos.
 - Redis para caché, idempotencia y bloqueos
 - Docker Compose para desarrollo; Kubernetes después, cuando Compose funcione
 - YARP como API Gateway
@@ -83,7 +83,7 @@ sastreria/
 ## Orden de construcción
 1. Repo y solución base (**hecho**)
 2. WorkOrderService (núcleo)
-3. Contracts + RabbitMQ + outbox
+3. Contracts + RabbitMQ + outbox (**en curso**: contratos de Tailor, broker local y persistencia outbox; falta publicador)
 4. Pagos: ya viven dentro de WorkOrderService (no hay servicio aparte por ahora)
 5. TailorService
 6. SettlementService (Redis para el bloqueo)
@@ -97,11 +97,12 @@ Avanzar **paso a paso**: el usuario quiere guía incremental, con comandos listo
 - **TailorService**: Domain (`Tailor` con registrar, desactivar y reactivar, y sus eventos); Application (`RegisterTailor`, `GetTailorById`); Infrastructure (EF Core, migración, concurrencia); API de registro y consulta; pruebas de integración para persistencia y conflicto de concurrencia. **Pendiente**: casos de uso/endpoints de desactivar/reactivar, listar sastres activos y autorización.
 - **IdentityService**: Domain y Application de las invitaciones de sastre (emitir, reemitir, aceptar) y autenticación (`LoginHandler`). Infrastructure con persistencia EF Core, tokens SHA-256, integración con ASP.NET Core Identity (`IAccountProvisioner`, `IAuthenticationService` con JWT, y `IdentityDataSeeder` para roles y cuenta admin inicial). API (`IdentityService.Api`) con endpoints de autenticación (`POST /api/auth/login`), emisión de invitaciones protegida con rol `Admin` (`POST /api/tailor-invitations`) y aceptación (`POST /api/tailor-invitations/accept`).
 - **Seguridad pendiente de IdentityService (bloqueante antes de exponerlo fuera de localhost)**: la entrega de invitaciones solo existe como implementación de desarrollo; el alta de cuenta (usuario + rol + invitación aceptada) debe ser atómica; limitar la tasa de peticiones del endpoint de aceptación.
-- **Pendiente por completo**: Contracts, RabbitMQ y outbox; SettlementService; Gateway; Angular; Dockerfiles y Kubernetes.
+- **Mensajería**: contratos versionados para cambios de estado de Tailor; RabbitMQ en Compose; TailorService persiste integration events en `outbox_messages` dentro del mismo `SaveChanges` que el agregado. Falta publicador con publisher confirms y consumidores.
+- **Pendiente por completo**: SettlementService; Gateway; Angular; Dockerfiles y Kubernetes.
 
 ## Decisiones abiertas
-- Provisionamiento seguro de la cuenta admin inicial (secrets/configuración de despliegue; nunca credenciales predeterminadas en código).
+- Correo real para entregar invitaciones en producción y límite de tasa en aceptación.
 - Roles y políticas concretas para recepción, sastre y admin, incluyendo cómo se vincula la identidad con el perfil `Tailor`.
-- **Mensajería y outbox**: MassTransit v9 (2026) es de licencia comercial; la v8 es Apache 2.0 pero su mantenimiento oficial termina el 31/12/2026. Opciones: outbox propio (tabla en la misma transacción + publicador en segundo plano con `RabbitMQ.Client`), Wolverine, Rebus, o MassTransit con licencia (hay una categoría gratuita para empresas pequeñas, pero hay que confirmar las condiciones en el sitio oficial). Recomendación: outbox propio detrás de un puerto (`IIntegrationEventPublisher`): sin riesgo de licencia, es el objetivo de aprendizaje y las necesidades son pequeñas; se puede cambiar de librería después sin tocar los casos de uso.
+- **Mensajería y outbox**: decisión tomada: outbox propio en Infrastructure y `RabbitMQ.Client` para publicar. Domain/Application no dependen de RabbitMQ; los mensajes se marcan procesados solo después de publisher confirm.
 - Cómo valida `WorkOrderService` que un sastre existe y está activo al asignar: llamada HTTP a `TailorService` (con caché en Redis) frente a **eventos (`TailorRegistered`, `TailorDeactivated`, `TailorReactivated`) y una copia local** de los sastres activos. Recomendación: eventos con copia local (asignar sigue funcionando si `TailorService` cae; el riesgo de consistencia eventual es bajo).
-- Cuáles domain events se publican como integration events en `Contracts`, y la forma exacta del contrato (sin datos personales ni secretos).
+- Incorporar contratos y mapeos equivalentes para los eventos que WorkOrderService necesite publicar, cuidando no incluir datos personales ni secretos.

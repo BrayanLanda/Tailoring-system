@@ -2,7 +2,7 @@
 
 Sistema para administrar boletas de arreglos de ropa, sastres, pagos y liquidaciones. El proyecto reemplaza el control manual en cuadernos y, a la vez, sirve para aprender diseño de dominio, TDD, PostgreSQL y una arquitectura de microservicios en .NET.
 
-> **Estado:** WorkOrderService y TailorService tienen una primera versión funcional. IdentityService está en desarrollo. Gateway, frontend, SettlementService y mensajería todavía no están implementados.
+> **Estado:** WorkOrderService y TailorService tienen una primera versión funcional. IdentityService tiene autenticación local e invitaciones en desarrollo. Contracts, RabbitMQ local y la persistencia Outbox de TailorService están iniciados; falta publicar mensajes y completar la integración entre servicios.
 
 ## Contenido
 
@@ -36,12 +36,12 @@ La solución elige microservicios como objetivo educativo y de práctica. No tod
 |---|---|---|---|
 | WorkOrderService | Boletas, seriales, precios, abonos, estados y garantías | PostgreSQL `work_order_db` | Primera versión funcional |
 | TailorService | Perfil y estado activo/inactivo del sastre | PostgreSQL `tailor_db` | Registro y consulta por ID funcionales |
-| IdentityService | Cuentas, credenciales, roles, invitaciones y tokens | PostgreSQL, pendiente de configurar | Domain y Application de invitaciones |
+| IdentityService | Cuentas, credenciales, roles, invitaciones y tokens | PostgreSQL | Login JWT e invitaciones implementados; en desarrollo |
 | SettlementService | Periodos, elegibilidad y liquidación del porcentaje del sastre | PostgreSQL + Redis | Planeado |
 | GatewayService | Entrada única, enrutamiento y seguridad | No aplica | Planeado |
 | Angular | Interfaz web | No aplica | Planeado |
 
-Las decisiones vigentes de autenticación son cuentas locales con correo y contraseña, IdentityService separado con PostgreSQL, y Google como proveedor opcional futuro. El administrador crea el perfil Tailor y luego invita al correo del sastre. La cuenta y el perfil se vinculan por ID; TailorService no guarda contraseñas. La intención es usar ASP.NET Core Identity y OpenIddict, pero aún no están integrados.
+Las decisiones vigentes de autenticación son cuentas locales con correo y contraseña, IdentityService separado con PostgreSQL, y Google como proveedor opcional futuro. El administrador crea el perfil Tailor y luego invita al correo del sastre. La cuenta y el perfil se vinculan por ID; TailorService no guarda contraseñas. IdentityService usa ASP.NET Core Identity para las cuentas y emite JWT localmente; OAuth/OIDC con OpenIddict aún no está implementado.
 
 ## Estado de implementación
 
@@ -57,7 +57,7 @@ Las decisiones vigentes de autenticación son cuentas locales con correo y contr
 
 - **Domain:** registrar, desactivar y reactivar un sastre. El estado inicial al registrar es activo; no se manejan horarios.
 - **Application:** registro y consulta por ID.
-- **Infrastructure:** EF Core/Npgsql, migración inicial y concurrencia optimista.
+- **Infrastructure:** EF Core/Npgsql, migraciones, concurrencia optimista y persistencia outbox atómica para eventos de integración de Tailor.
 - **API:** registrar y consultar por ID; incluye `/health`.
 - **Pendiente:** endpoints y casos de uso para desactivar/reactivar, listado de sastres activos y autorización. El API actual no tiene autenticación: úsalo solo en desarrollo local.
 
@@ -67,11 +67,17 @@ Las decisiones vigentes de autenticación son cuentas locales con correo y contr
 - **Application:** emitir/reemitir y aceptar invitaciones; autenticación local con `LoginHandler`. La aceptación valida la invitación antes de provisionar la cuenta. Los comandos y resultados que contienen contraseñas o tokens ocultan esos valores en `ToString()`.
 - **Infrastructure:** EF Core/Npgsql con `IdentityDbContext`, tokens seguros SHA-256, aprovisionamiento de cuentas con ASP.NET Core Identity (`AppUser`, `AppRole`, rol `Tailor` y vínculo a `TailorProfileId`) y servicio de autenticación con JWT (`IAuthenticationService`).
 - **API:** endpoints `POST /api/auth/login`, `POST /api/tailor-invitations` y `POST /api/tailor-invitations/accept`, manejo centralizado de excepciones con `ApiExceptionHandler` y `/health`.
-- **Pendiente:** siembra de roles y cuenta admin inicial por configuración, entrega de correos real para producción, protección del endpoint de invitaciones con autorización de rol Admin y límite de tasa en peticiones.
+- **Hecho:** siembra de roles y admin inicial por configuración; `POST /api/tailor-invitations` exige rol `Admin`.
+- **Pendiente:** entrega de correos real para producción y límite de tasa en aceptación.
 
-### Componentes todavía planeados
+### Mensajería
 
-Contracts, RabbitMQ/MassTransit, outbox, SettlementService, Gateway, frontend Angular, Dockerfiles y despliegue Kubernetes no están implementados.
+- `BuildingBlocks/Contracts` contiene eventos versionables para el registro, desactivación y reactivación de sastres.
+- Compose incluye RabbitMQ con interfaz de administración. Las credenciales se configuran en `.env` como `RABBITMQ_USER` y `RABBITMQ_PASSWORD`; no se usa `guest`.
+- TailorService guarda los eventos de integración en `outbox_messages` junto con los cambios del sastre, en la misma transacción.
+- **Pendiente:** publicador en segundo plano con publisher confirms, reintentos y consumidores idempotentes.
+
+SettlementService, Gateway, frontend Angular, Dockerfiles y despliegue Kubernetes siguen planeados.
 
 ## Reglas principales del negocio
 
@@ -332,7 +338,7 @@ src/
 │   └── IdentityService/
 │       ├── IdentityService.Domain/
 │       └── IdentityService.Application/
-├── BuildingBlocks/Contracts/       # planeado; aún no implementado
+├── BuildingBlocks/Contracts/       # contratos de integración versionados
 └── GatewayService/                 # planeado; aún no implementado
 test/
 ├── WorkOrderService.*.Tests/
@@ -344,11 +350,11 @@ test/
 
 ## Siguiente trabajo
 
-1. IdentityService Infrastructure: EF Core/PostgreSQL, concurrencia y persistencia de invitaciones; pruebas Testcontainers.
-2. Implementar la generación criptográfica del token, entrega de invitaciones y provisión de cuentas con ASP.NET Core Identity de forma transaccional.
-3. IdentityService API y OpenIddict; bootstrap seguro del primer administrador y autorización del endpoint de Tailor.
-4. Completar casos de uso de Tailor y WorkOrder.
-5. Contracts, mensajería/outbox, SettlementService, Gateway y frontend.
+1. Completar publicador Outbox de TailorService con `RabbitMQ.Client`, publisher confirms y procesamiento seguro por lote.
+2. Probar el ciclo Outbox con RabbitMQ y revisar los fallos/reintentos.
+3. Incorporar contratos y outbox para los eventos necesarios de WorkOrderService.
+4. Completar casos de uso restantes de Tailor y WorkOrder.
+5. SettlementService, Gateway y frontend.
 
 El orden puede cambiar cuando el negocio o una decisión técnica lo justifique. Mantén este README y las skills sincronizados al cerrar cada etapa.
 

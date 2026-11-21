@@ -119,7 +119,7 @@ test/
 5. **Application** con TDD: un caso de uso a la vez, con fakes escritos a mano.
 6. **Infrastructure**: PostgreSQL propio en `docker-compose.yml`; EF Core con Npgsql y `snake_case`; mapeo y migración; columna `Version` (concurrencia); repositorio y unit of work. Después las **pruebas de integración** con Testcontainers, incluida la de concurrencia, que empieza en rojo real.
 7. **Api**: endpoints con DTOs simples, `ApiExceptionHandler` central, health check (`/health`) y `public partial class Program;` al final de `Program.cs`.
-8. Si publica eventos: **outbox** (el evento se guarda en la misma transacción que el cambio y un proceso en segundo plano lo publica en RabbitMQ). Si los consume: consumidores idempotentes (descartan eventos ya procesados por su `EventId`) con reintentos y DLQ. La librería de mensajería está por decidir (ver `sastreria-arquitectura`); los casos de uso dependen solo de un puerto.
+8. Si publica eventos: **outbox** (Infrastructure traduce el domain event a un contrato y lo guarda en la misma transacción que el agregado; un proceso en segundo plano lo publica en RabbitMQ mediante `RabbitMQ.Client` y publisher confirms). Si los consume: consumidores idempotentes (descartan eventos ya procesados por su `EventId`) con reintentos y DLQ. Domain/Application no dependen de RabbitMQ.
 9. `Dockerfile` multi-stage en el proyecto `Api` y entrada del servicio en `docker-compose.yml` con variables de entorno y `depends_on` con health checks.
 
 ## Reglas de código
