@@ -1,3 +1,4 @@
+using TailorService.Api.BackgroundServices;
 using TailorService.Api;
 using TailorService.Api.Tailors;
 using TailorService.Application.Tailors.GetTailorById;
@@ -14,6 +15,8 @@ builder.Services.AddHealthChecks();
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<ApiExceptionHandler>();
 builder.Services.AddTailorInfrastructure(connectionString);
+builder.Services.AddTailorMessaging(builder.Configuration);
+builder.Services.AddHostedService<OutboxDispatchBackgroundService>();
 builder.Services.AddScoped<RegisterTailorHandler>();
 builder.Services.AddScoped<GetTailorByIdHandler>();
 

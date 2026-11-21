@@ -17,4 +17,6 @@ public sealed class OutboxMessage
     public string Payload { get; private set; } = null!;
     public DateTimeOffset OccurredOn { get; private set; }
     public DateTimeOffset? ProcessedOn { get; private set; }
+
+    public void MarkAsProcessed(DateTimeOffset processedOn) => ProcessedOn = processedOn;
 }
