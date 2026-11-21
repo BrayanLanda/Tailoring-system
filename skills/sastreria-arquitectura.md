@@ -15,7 +15,7 @@ El negocio es pequeño y un monolito modular sería más simple. Se eligen **mic
 - .NET 10 (SDK fijado en `global.json`), C#, ASP.NET Core Web API
 - Angular (CLI 22.x)
 - PostgreSQL, **una base de datos por servicio**, nunca compartida
-- RabbitMQ + MassTransit para eventos
+- RabbitMQ para eventos. La librería o el mecanismo de mensajería está **por decidir** (MassTransit v9 es comercial; ver *Decisiones abiertas*).
 - Redis para caché, idempotencia y bloqueos
 - Docker Compose para desarrollo; Kubernetes después, cuando Compose funcione
 - YARP como API Gateway
@@ -96,10 +96,12 @@ Avanzar **paso a paso**: el usuario quiere guía incremental, con comandos listo
 - **WorkOrderService**: Domain completo (boleta, precio, abonos, garantías con compensación autorizada, trabajos, domain events); Application con `CreateWorkOrder`, `SetWorkOrderPrice` y `RegisterPayment`; Infrastructure con EF Core, migraciones, serial con secuencia y concurrencia optimista; API con esos tres endpoints y manejo central de errores. **Pendiente**: casos de uso de asignar sastre, iniciar trabajo, entregas y garantías; `GET /api/work-orders/{id}` y consultas; publicación de eventos (outbox).
 - **TailorService**: Domain (`Tailor` con registrar, desactivar y reactivar, y sus eventos); Application (`RegisterTailor`, `GetTailorById`); Infrastructure (EF Core, migración, concurrencia); API de registro y consulta; pruebas de integración para persistencia y conflicto de concurrencia. **Pendiente**: casos de uso/endpoints de desactivar/reactivar, listar sastres activos y autorización.
 - **IdentityService**: Domain y Application de las invitaciones de sastre (emitir, reemitir, aceptar). Infrastructure con persistencia EF Core, tokens SHA-256 e integración con ASP.NET Core Identity (`IAccountProvisioner` con rol `Tailor` y `AppUser.TailorProfileId`). API (`IdentityService.Api`) con endpoints de emitir y aceptar invitaciones, y `ApiExceptionHandler`. **Pendiente**: migraciones de base de datos para tablas de Identity, OpenIddict (emisión de tokens de acceso), bootstrap del primer admin y autenticación/autorización de endpoints.
+- **Seguridad pendiente de IdentityService (bloqueante antes de exponerlo fuera de localhost)**: los endpoints que emiten o reemiten invitaciones deben exigir rol Admin (hoy están abiertos, porque aún no hay OpenIddict ni validación de tokens); la entrega de invitaciones solo existe como implementación de desarrollo; el alta de cuenta (usuario + rol + invitación aceptada) debe ser atómica; limitar la tasa de peticiones del endpoint de aceptación; sembrar los roles y la cuenta admin inicial por configuración.
 - **Pendiente por completo**: Contracts, RabbitMQ y outbox; SettlementService; Gateway; Angular; Dockerfiles y Kubernetes.
 
 ## Decisiones abiertas
 - Provisionamiento seguro de la cuenta admin inicial (secrets/configuración de despliegue; nunca credenciales predeterminadas en código).
 - Roles y políticas concretas para recepción, sastre y admin, incluyendo cómo se vincula la identidad con el perfil `Tailor`.
+- **Mensajería y outbox**: MassTransit v9 (2026) es de licencia comercial; la v8 es Apache 2.0 pero su mantenimiento oficial termina el 31/12/2026. Opciones: outbox propio (tabla en la misma transacción + publicador en segundo plano con `RabbitMQ.Client`), Wolverine, Rebus, o MassTransit con licencia (hay una categoría gratuita para empresas pequeñas, pero hay que confirmar las condiciones en el sitio oficial). Recomendación: outbox propio detrás de un puerto (`IIntegrationEventPublisher`): sin riesgo de licencia, es el objetivo de aprendizaje y las necesidades son pequeñas; se puede cambiar de librería después sin tocar los casos de uso.
 - Cómo valida `WorkOrderService` que un sastre existe y está activo al asignar: llamada HTTP a `TailorService` (con caché en Redis) frente a **eventos (`TailorRegistered`, `TailorDeactivated`, `TailorReactivated`) y una copia local** de los sastres activos. Recomendación: eventos con copia local (asignar sigue funcionando si `TailorService` cae; el riesgo de consistencia eventual es bajo).
 - Cuáles domain events se publican como integration events en `Contracts`, y la forma exacta del contrato (sin datos personales ni secretos).

@@ -1,6 +1,6 @@
 ---
 name: sastreria-nuevo-servicio
-description: Convenciones y pasos para crear o ampliar un microservicio .NET del proyecto de sastrería (estructura de carpetas interna, nombres, EF Core con PostgreSQL, Dockerfile, entrada en docker-compose, MassTransit con outbox, health checks, pruebas). Úsala SIEMPRE que se vaya a crear un servicio nuevo, añadir endpoints, entidades, migraciones, consumidores o publicadores de eventos, o contenerizar un servicio, aunque el usuario solo diga "crea el servicio X" o "agrega un endpoint".
+description: Convenciones y pasos para crear o ampliar un microservicio .NET del proyecto de sastrería (estructura de carpetas interna, nombres, EF Core con PostgreSQL, Dockerfile, entrada en docker-compose, mensajería con outbox, health checks, pruebas). Úsala SIEMPRE que se vaya a crear un servicio nuevo, añadir endpoints, entidades, migraciones, consumidores o publicadores de eventos, o contenerizar un servicio, aunque el usuario solo diga "crea el servicio X" o "agrega un endpoint".
 ---
 
 # Crear o ampliar un servicio
@@ -105,9 +105,11 @@ test/
     - Peticiones y respuestas usan tipos simples (`Guid`, `long`, `decimal`, `string`), nunca value objects ni entidades del dominio.
     - Todo `201 Created` devuelve un `Location` que existe (hay un GET para ese recurso).
     - Los mensajes de las excepciones llegan al cliente en `detail`: deben ser legibles y no filtrar tipos internos (ej. usar `id.Value`, no `id`).
+    - El `IUnitOfWork` traduce a `ConcurrencyConflictException` (409) tanto `DbUpdateConcurrencyException` como las violaciones de índice único de PostgreSQL (`SqlState` 23505): una restricción de la base de datos que se viola por una carrera no es un error del servidor.
+    - Los endpoints de administración (emitir invitaciones, cambiar precios de otros, etc.) exigen autenticación y rol; nunca quedan abiertos, ni siquiera de forma provisional.
     - El mapeo de errores se prueba con pruebas unitarias del handler (`DefaultHttpContext`), sin servidor ni base de datos.
 
-18. **Secretos**: un `record` imprime todas sus propiedades en `ToString()`, y eso llega a los logs y a los mensajes de las pruebas que fallan. Todo comando, resultado o evento que contenga un secreto (contraseña, token en claro) sobrescribe `ToString()` ocultándolo y lleva una prueba que lo verifique (`SecretRedactionTests`). Los secretos nunca viajan en domain events ni en integration events.
+18. **Secretos**: un `record` imprime todas sus propiedades en `ToString()`, y eso llega a los logs y a los mensajes de las pruebas que fallan. Todo comando, resultado o evento que contenga un secreto (contraseña, token en claro) sobrescribe `ToString()` ocultándolo y lleva una prueba que lo verifique (`SecretRedactionTests`). Los secretos nunca viajan en domain events ni en integration events. **Ninguna cadena de conexión ni credencial por defecto en el código**: si falta la configuración, la aplicación falla al arrancar con un mensaje claro (como hacen WorkOrder y Tailor). Una implementación que imprime secretos (ej. entrega de invitaciones por log) solo se registra en `Development`.
 
 ## Pasos para crear un servicio
 1. Crear los cuatro proyectos (`Api` con `dotnet new webapi`, el resto con `dotnet new classlib`), agregarlos a la solución y configurar las referencias según la regla de dependencias. Los proyectos de prueba se crean copiando el `.csproj` de otro proyecto de pruebas (evita los errores de versiones centralizadas) y agregándole su `ProjectReference`.
@@ -117,7 +119,7 @@ test/
 5. **Application** con TDD: un caso de uso a la vez, con fakes escritos a mano.
 6. **Infrastructure**: PostgreSQL propio en `docker-compose.yml`; EF Core con Npgsql y `snake_case`; mapeo y migración; columna `Version` (concurrencia); repositorio y unit of work. Después las **pruebas de integración** con Testcontainers, incluida la de concurrencia, que empieza en rojo real.
 7. **Api**: endpoints con DTOs simples, `ApiExceptionHandler` central, health check (`/health`) y `public partial class Program;` al final de `Program.cs`.
-8. Si publica eventos: MassTransit con RabbitMQ y **outbox de EF Core**. Si los consume: consumidores idempotentes con reintentos y DLQ.
+8. Si publica eventos: **outbox** (el evento se guarda en la misma transacción que el cambio y un proceso en segundo plano lo publica en RabbitMQ). Si los consume: consumidores idempotentes (descartan eventos ya procesados por su `EventId`) con reintentos y DLQ. La librería de mensajería está por decidir (ver `sastreria-arquitectura`); los casos de uso dependen solo de un puerto.
 9. `Dockerfile` multi-stage en el proyecto `Api` y entrada del servicio en `docker-compose.yml` con variables de entorno y `depends_on` con health checks.
 
 ## Reglas de código
@@ -148,6 +150,9 @@ test/
 - Infrastructure (pendiente): índice único sobre `tailor_profile_id` (una sola invitación por perfil), columna `Version` para concurrencia y un índice único sobre el correo y sobre el vínculo cuenta–perfil de sastre, para que dos aceptaciones simultáneas no creen dos cuentas.
 - Infrastructure (pendiente): la creación de la cuenta (ASP.NET Core Identity) y la aceptación de la invitación se confirman en **una sola transacción** (mismo `DbContext`, sin autoguardado de `UserManager`), para no dejar una cuenta sin su invitación aceptada.
 - Verificar con pruebas de integración que una contraseña débil deja la invitación **todavía válida** para reintentar (con el fake en memoria no se puede comprobar).
+
+- **Seguridad pendiente (bloqueante antes de exponer el servicio)**: autenticación y rol Admin en el endpoint que emite invitaciones (hoy cualquiera puede emitir o reemitir una invitación, lo que permitiría secuestrar la de otro sastre y obtener una cuenta con rol Tailor); `IInvitationDelivery` real (correo) fuera de Development, con el arranque fallando si no hay ninguna registrada; alta de cuenta atómica (usuario, rol e invitación en una sola transacción, con una prueba de integración que inyecte un fallo en el segundo guardado); límite de tasa en el endpoint de aceptación; siembra de roles y de la cuenta admin inicial por configuración.
+- Un correo pertenece a un solo sastre: el índice único sobre `tailor_invitations.email` lo impone en base de datos.
 
 ## Antes de terminar un cambio
 Verifica que compila (`dotnet build`), que las pruebas pasan (`dotnet test`) y que, si tocaste un contrato de evento, los servicios que lo consumen siguen siendo compatibles.

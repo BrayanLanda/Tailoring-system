@@ -8,7 +8,7 @@ using IdentityService.Infrastructure;
 var builder = WebApplication.CreateBuilder(args);
 
 var connectionString = builder.Configuration.GetConnectionString("IdentityDb")
-    ?? "Host=localhost;Port=5435;Database=identity_db;Username=postgres;Password=postgres";
+    ?? throw new InvalidOperationException("Connection string 'IdentityDb' is not configured");
 
 builder.Services.AddOpenApi();
 builder.Services.AddHealthChecks();
@@ -17,6 +17,8 @@ builder.Services.AddExceptionHandler<ApiExceptionHandler>();
 
 builder.Services.AddIdentityInfrastructure(connectionString);
 builder.Services.AddSingleton(TimeProvider.System);
+if (builder.Environment.IsDevelopment())
+    builder.Services.AddSingleton<IInvitationDelivery, DevelopmentInvitationDelivery>();
 
 // Default invitation lifetime: 48 hours
 builder.Services.AddScoped(sp =>
@@ -24,7 +26,7 @@ builder.Services.AddScoped(sp =>
     var repo = sp.GetRequiredService<IdentityService.Domain.Repositories.ITailorInvitationRepository>();
     var uow = sp.GetRequiredService<IUnitOfWork>();
     var tokenGen = sp.GetRequiredService<IInvitationTokenGenerator>();
-    var delivery = sp.GetService<IInvitationDelivery>() ?? new LoggingInvitationDelivery();
+    var delivery = sp.GetRequiredService<IInvitationDelivery>();
     var timeProvider = sp.GetRequiredService<TimeProvider>();
     return new IssueTailorInvitationHandler(repo, uow, tokenGen, delivery, timeProvider, TimeSpan.FromHours(48));
 });
@@ -40,6 +42,10 @@ builder.Services.AddScoped(sp =>
 });
 
 var app = builder.Build();
+// Without a real delivery, invitations would be saved and their token lost. Refuse to start instead.
+if (app.Services.GetService<IInvitationDelivery>() is null)
+    throw new InvalidOperationException(
+        "No IInvitationDelivery is registered. Register an email delivery for this environment.");
 app.UseExceptionHandler();
 
 if (app.Environment.IsDevelopment())
@@ -54,17 +60,3 @@ app.MapTailorInvitationEndpoints();
 app.Run();
 
 public partial class Program;
-
-internal sealed class LoggingInvitationDelivery : IInvitationDelivery
-{
-    public Task DeliverAsync(
-        IdentityService.Domain.ValueObjects.EmailAddress email,
-        IdentityService.Domain.ValueObjects.TailorInvitationId invitationId,
-        string rawToken,
-        DateTimeOffset expiresAt,
-        CancellationToken cancellationToken = default)
-    {
-        // Placeholder until email delivery is configured in Infrastructure
-        return Task.CompletedTask;
-    }
-}

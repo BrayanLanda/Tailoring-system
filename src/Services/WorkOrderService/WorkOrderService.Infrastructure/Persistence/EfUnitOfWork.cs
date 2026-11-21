@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using WorkOrderService.Application.Abstractions;
 using WorkOrderService.Application.Exceptions;
 
@@ -14,6 +15,12 @@ public sealed class EfUnitOfWork(WorkOrderDbContext dbContext) : IUnitOfWork
         }
         catch (DbUpdateConcurrencyException exception)
         {
+            throw new ConcurrencyConflictException(exception);
+        }
+        catch (DbUpdateException exception)
+            when (exception.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
+        {
+            // A unique index was violated: someone else got there first. The caller can retry.
             throw new ConcurrencyConflictException(exception);
         }
     }

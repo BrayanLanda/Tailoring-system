@@ -113,7 +113,7 @@ public sealed class WorkOrderPersistenceTests(PostgresFixture postgres)
         var serial = SerialNumber.From(900_001);
         await SaveAsync(s => RegularWorkOrder(s), serial);
 
-        await Assert.ThrowsAsync<DbUpdateException>(() =>
+        await Assert.ThrowsAsync<ConcurrencyConflictException>(() =>
             SaveAsync(s => RegularWorkOrder(s), serial));
     }
 

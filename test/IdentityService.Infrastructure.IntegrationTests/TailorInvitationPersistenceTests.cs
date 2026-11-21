@@ -74,6 +74,49 @@ public sealed class TailorInvitationPersistenceTests(IdentityPostgresFixture pos
             () => UnitOfWork(secondRequest).SaveChangesAsync());
     }
 
+    [Fact]
+    public async Task TwoFirstInvitationsForTheSameProfile_SecondSaveConflicts()
+    {
+        var profile = new TailorProfileId(Guid.CreateVersion7());
+        await using var firstRequest = postgres.NewRequest();
+        await using var secondRequest = postgres.NewRequest();
+
+        await Repository(firstRequest).AddAsync(NewInvitation(firstRequest, profile, UniqueEmail()));
+        await Repository(secondRequest).AddAsync(NewInvitation(secondRequest, profile, UniqueEmail()));
+
+        await UnitOfWork(firstRequest).SaveChangesAsync();
+
+        // The unique index on tailor_profile_id rejects the second insert.
+        // That is a conflict the caller can retry, not a server error.
+        await Assert.ThrowsAsync<ConcurrencyConflictException>(
+            () => UnitOfWork(secondRequest).SaveChangesAsync());
+    }
+
+    [Fact]
+    public async Task TwoInvitationsForTheSameEmail_SecondSaveConflicts()
+    {
+        var email = UniqueEmail();
+        await using var firstRequest = postgres.NewRequest();
+        await using var secondRequest = postgres.NewRequest();
+
+        await Repository(firstRequest).AddAsync(
+            NewInvitation(firstRequest, new TailorProfileId(Guid.CreateVersion7()), email));
+        await Repository(secondRequest).AddAsync(
+            NewInvitation(secondRequest, new TailorProfileId(Guid.CreateVersion7()), email));
+
+        await UnitOfWork(firstRequest).SaveChangesAsync();
+
+        await Assert.ThrowsAsync<ConcurrencyConflictException>(
+            () => UnitOfWork(secondRequest).SaveChangesAsync());
+    }
+
+    private static TailorInvitation NewInvitation(AsyncServiceScope request, TailorProfileId profile, string email) =>
+        TailorInvitation.Create(
+            EmailAddress.Of(email), profile, Hash(request, "any-token"), IssuedAt, IssuedAt.AddDays(2));
+
+    // Unique emails, because the table has a unique index and the tests share one database.
+    private static string UniqueEmail() => $"{Guid.NewGuid():N}@example.com";
+
     private async Task<TailorInvitationId> SaveInvitationAsync()
     {
         await using var request = postgres.NewRequest();
