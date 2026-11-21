@@ -1,6 +1,8 @@
 using IdentityService.Api;
+using IdentityService.Api.Auth;
 using IdentityService.Api.TailorInvitations;
 using IdentityService.Application.Abstractions;
+using IdentityService.Application.Auth.Login;
 using IdentityService.Application.TailorInvitations.AcceptTailorInvitation;
 using IdentityService.Application.TailorInvitations.IssueTailorInvitation;
 using IdentityService.Infrastructure;
@@ -15,10 +17,12 @@ builder.Services.AddHealthChecks();
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<ApiExceptionHandler>();
 
-builder.Services.AddIdentityInfrastructure(connectionString);
+builder.Services.AddIdentityInfrastructure(connectionString, builder.Configuration);
 builder.Services.AddSingleton(TimeProvider.System);
 if (builder.Environment.IsDevelopment())
     builder.Services.AddSingleton<IInvitationDelivery, DevelopmentInvitationDelivery>();
+
+builder.Services.AddScoped<LoginHandler>();
 
 // Default invitation lifetime: 48 hours
 builder.Services.AddScoped(sp =>
@@ -54,7 +58,17 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+app.UseAuthentication();
+app.UseAuthorization();
+
+using (var scope = app.Services.CreateScope())
+{
+    var seeder = scope.ServiceProvider.GetRequiredService<IdentityService.Infrastructure.Security.IdentityDataSeeder>();
+    await seeder.SeedAsync();
+}
+
 app.MapHealthChecks("/health");
+app.MapAuthEndpoints();
 app.MapTailorInvitationEndpoints();
 
 app.Run();

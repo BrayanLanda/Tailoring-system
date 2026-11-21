@@ -16,6 +16,7 @@ public sealed class IdentityPostgresFixture : IAsyncLifetime
         await _container.StartAsync();
 
         _serviceProvider = new ServiceCollection()
+            .AddSingleton(TimeProvider.System)
             .AddIdentityInfrastructure(_container.GetConnectionString())
             .BuildServiceProvider();
 

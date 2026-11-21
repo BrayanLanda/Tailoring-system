@@ -11,8 +11,11 @@ public static class TailorInvitationEndpoints
 
         group.MapPost("/", IssueInvitationAsync)
             .WithName("IssueTailorInvitation")
+            .RequireAuthorization(policy => policy.RequireRole(IdentityService.Infrastructure.Persistence.Entities.AppRole.Admin))
             .Produces<IssueTailorInvitationResponse>(StatusCodes.Status201Created)
             .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
 
         group.MapPost("/accept", AcceptInvitationAsync)

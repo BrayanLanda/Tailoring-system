@@ -151,7 +151,7 @@ test/
 - Infrastructure (pendiente): la creación de la cuenta (ASP.NET Core Identity) y la aceptación de la invitación se confirman en **una sola transacción** (mismo `DbContext`, sin autoguardado de `UserManager`), para no dejar una cuenta sin su invitación aceptada.
 - Verificar con pruebas de integración que una contraseña débil deja la invitación **todavía válida** para reintentar (con el fake en memoria no se puede comprobar).
 
-- **Seguridad pendiente (bloqueante antes de exponer el servicio)**: autenticación y rol Admin en el endpoint que emite invitaciones (hoy cualquiera puede emitir o reemitir una invitación, lo que permitiría secuestrar la de otro sastre y obtener una cuenta con rol Tailor); `IInvitationDelivery` real (correo) fuera de Development, con el arranque fallando si no hay ninguna registrada; alta de cuenta atómica (usuario, rol e invitación en una sola transacción, con una prueba de integración que inyecte un fallo en el segundo guardado); límite de tasa en el endpoint de aceptación; siembra de roles y de la cuenta admin inicial por configuración.
+- **Seguridad pendiente (bloqueante antes de exponer el servicio)**: `IInvitationDelivery` real (correo) fuera de Development, con el arranque fallando si no hay ninguna registrada; alta de cuenta atómica (usuario, rol e invitación en una sola transacción, con una prueba de integración que inyecte un fallo en el segundo guardado); límite de tasa en el endpoint de aceptación.
 - Un correo pertenece a un solo sastre: el índice único sobre `tailor_invitations.email` lo impone en base de datos.
 
 ## Antes de terminar un cambio

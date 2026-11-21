@@ -64,10 +64,10 @@ Las decisiones vigentes de autenticación son cuentas locales con correo y contr
 ### IdentityService
 
 - **Domain:** invitación de sastre vinculada a su `TailorProfileId`; normalización de correo, hash del token, expiración, aceptación de un solo uso y reemisión que invalida el enlace anterior. No se puede reinvitar una cuenta que ya aceptó.
-- **Application:** emitir/reemitir y aceptar invitaciones. La aceptación valida la invitación antes de provisionar la cuenta. Los comandos que contienen contraseña o token ocultan esos valores en `ToString()`.
-- **Infrastructure:** EF Core/Npgsql con `IdentityDbContext`, tokens seguros SHA-256 y aprovisionamiento de cuentas locales con ASP.NET Core Identity (`AppUser`, `AppRole`, rol `Tailor` y vínculo a `TailorProfileId`).
-- **API:** endpoints `POST /api/tailor-invitations` y `POST /api/tailor-invitations/accept`, manejo centralizado de excepciones con `ApiExceptionHandler` y `/health`.
-- **Pendiente:** migraciones para tablas de ASP.NET Core Identity, OpenIddict (OAuth 2.0 / OIDC para tokens de acceso), entrega de correos real, roles adicionales (`Admin`, `Receptionist`) y bootstrap seguro del administrador inicial.
+- **Application:** emitir/reemitir y aceptar invitaciones; autenticación local con `LoginHandler`. La aceptación valida la invitación antes de provisionar la cuenta. Los comandos y resultados que contienen contraseñas o tokens ocultan esos valores en `ToString()`.
+- **Infrastructure:** EF Core/Npgsql con `IdentityDbContext`, tokens seguros SHA-256, aprovisionamiento de cuentas con ASP.NET Core Identity (`AppUser`, `AppRole`, rol `Tailor` y vínculo a `TailorProfileId`) y servicio de autenticación con JWT (`IAuthenticationService`).
+- **API:** endpoints `POST /api/auth/login`, `POST /api/tailor-invitations` y `POST /api/tailor-invitations/accept`, manejo centralizado de excepciones con `ApiExceptionHandler` y `/health`.
+- **Pendiente:** siembra de roles y cuenta admin inicial por configuración, entrega de correos real para producción, protección del endpoint de invitaciones con autorización de rol Admin y límite de tasa en peticiones.
 
 ### Componentes todavía planeados
 
