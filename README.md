@@ -2,7 +2,7 @@
 
 Sistema para administrar boletas de arreglos de ropa, sastres, pagos y liquidaciones. El proyecto reemplaza el control manual en cuadernos y, a la vez, sirve para aprender diseño de dominio, TDD, PostgreSQL y una arquitectura de microservicios en .NET.
 
-> **Estado:** WorkOrderService y TailorService tienen una primera versión funcional. IdentityService tiene autenticación local e invitaciones en desarrollo. El consumidor de Tailor en WorkOrderService procesa eventos con RabbitMQ y PostgreSQL reales; falta validar el ciclo completo desde el outbox de TailorService hasta la proyección.
+> **Estado:** WorkOrderService y TailorService tienen una primera versión funcional. IdentityService ofrece autenticación local e invitaciones para desarrollo. El recorrido Tailor outbox → RabbitMQ → proyección WorkOrder y la asignación HTTP protegida están cubiertos con pruebas de integración.
 
 ## Contenido
 
@@ -34,7 +34,7 @@ La solución elige microservicios como objetivo educativo y de práctica. No tod
 
 | Servicio | Responsabilidad | Persistencia | Estado |
 |---|---|---|---|
-| WorkOrderService | Boletas, seriales, precios, abonos, estados y garantías | PostgreSQL `work_order_db` | Primera versión funcional |
+| WorkOrderService | Boletas, seriales, precios, abonos, estados y garantías | PostgreSQL `work_order_db` | Creación, precio, pagos y asignación protegida funcionales |
 | TailorService | Perfil y estado activo/inactivo del sastre | PostgreSQL `tailor_db` | Registro y consulta por ID funcionales |
 | IdentityService | Cuentas, credenciales, roles, invitaciones y tokens | PostgreSQL `identity_db` | API JWT e invitaciones; login con lockout, pruebas de flujo y claims del sastre |
 | SettlementService | Periodos, elegibilidad y liquidación del porcentaje del sastre | PostgreSQL + Redis | Planeado |
@@ -48,10 +48,10 @@ Las decisiones vigentes de autenticación son cuentas locales con correo y contr
 ### WorkOrderService
 
 - **Domain:** agregado `WorkOrder`, trabajos descriptivos, pagos, precio, garantías, serial tipado, estados separados de trabajo y pago, y reglas de negocio.
-- **Application:** `CreateWorkOrder`, `SetWorkOrderPrice` y `RegisterPayment`.
-- **Infrastructure:** EF Core/Npgsql, migraciones, secuencia PostgreSQL para el serial y concurrencia optimista con `Version`.
-- **API:** crear boleta, definir precio y registrar pago; manejo central de errores y `/health`.
-- **Pendiente:** asignación e hitos de trabajo, entregas, casos de uso de garantías, consultas y publicación de eventos mediante outbox.
+- **Application:** `CreateWorkOrder`, `SetWorkOrderPrice`, `RegisterPayment` y `AssignTailor`; la asignación requiere un sastre activo en la proyección local.
+- **Infrastructure:** EF Core/Npgsql, migraciones, secuencia PostgreSQL para el serial, concurrencia optimista con `Version` y proyección de sastres alimentada por RabbitMQ.
+- **API:** crear boleta, definir precio, registrar pago y asignar sastre activo. Identity firma JWT con RS256; la asignación exige rol `Admin`.
+- **Pendiente:** hitos de trabajo, entregas, casos de uso de garantías, consultas y publicación de eventos mediante outbox propio.
 
 ### TailorService
 
@@ -65,9 +65,10 @@ Las decisiones vigentes de autenticación son cuentas locales con correo y contr
 
 - **Domain:** invitación de sastre vinculada a su `TailorProfileId`; normalización de correo, hash del token, expiración, aceptación de un solo uso y reemisión que invalida el enlace anterior. No se puede reinvitar una cuenta que ya aceptó.
 - **Application:** emitir/reemitir y aceptar invitaciones; autenticación local con `LoginHandler`. La aceptación valida la invitación antes de provisionar la cuenta. Los comandos y resultados que contienen contraseñas o tokens ocultan esos valores en `ToString()`.
-- **Infrastructure:** EF Core/Npgsql con `IdentityDbContext`, tokens seguros SHA-256, aprovisionamiento de cuentas con ASP.NET Core Identity (`AppUser`, `AppRole`, rol `Tailor` y vínculo a `TailorProfileId`) y servicio de autenticación con JWT (`IAuthenticationService`).
+- **Infrastructure:** EF Core/Npgsql con `IdentityDbContext`, tokens seguros SHA-256, aprovisionamiento de cuentas con ASP.NET Core Identity (`AppUser`, `AppRole`, rol `Tailor` y vínculo a `TailorProfileId`) y emisión JWT RS256 con clave privada RSA.
 - **API:** endpoints `POST /api/auth/login`, `POST /api/tailor-invitations` y `POST /api/tailor-invitations/accept`, manejo centralizado de excepciones con `ApiExceptionHandler` y `/health`.
 - **Hecho:** siembra de roles y admin inicial por configuración; `POST /api/tailor-invitations` exige rol `Admin`.
+- **Hecho:** IdentityService firma RS256; WorkOrderService valida usando solo la clave pública.
 - **Pendiente:** entrega de invitaciones por correo real y límite de tasa en aceptación. En Development, la entrega escribe el token de invitación en el log.
 
 ### Mensajería
@@ -79,7 +80,7 @@ Las decisiones vigentes de autenticación son cuentas locales con correo y contr
 - El envío ofrece semántica **al menos una vez**: un fallo después de que RabbitMQ confirma, pero antes de guardar `ProcessedOn`, puede producir un duplicado. Los consumidores deben deduplicar por `EventId`.
 - El publicador declara solo el exchange. WorkOrderService consume desde su propia cola durable, `work-order.tailor-events`, enlazada con `tailor.#`; persiste el estado local del sastre y confirma el mensaje después de guardar.
 - La proyección usa `OccurredOn` como “último momento visto”: ignora eventos repetidos o anteriores. Los errores reintentables esperan el TTL configurado (`RABBITMQ_RETRY_DELAY_MILLISECONDS`, 5000 por defecto), hasta `RABBITMQ_MAX_RETRIES` (3); luego van a `work-order.tailor-events.dlq`.
-- **Pendiente:** probar el ciclo completo outbox→RabbitMQ→proyección, exclusión de filas del outbox al escalar TailorService y políticas operativas para inspeccionar/reprocesar la DLQ.
+- **Hecho y probado con Testcontainers:** Tailor outbox→RabbitMQ→proyección PostgreSQL de WorkOrderService. **Pendiente:** exclusión de filas del outbox al escalar TailorService y políticas operativas para inspeccionar/reprocesar la DLQ.
 
 SettlementService, Gateway, frontend Angular, Dockerfiles y despliegue Kubernetes siguen planeados.
 
@@ -140,7 +141,7 @@ cp .env.example .env
 
 Edita `.env` y establece una contraseña local para `WORK_ORDER_DB_PASSWORD` y `RABBITMQ_PASSWORD`. Puedes definir contraseñas propias para Tailor e Identity con `TAILOR_DB_PASSWORD` e `IDENTITY_DB_PASSWORD`; si quedan vacías, Compose reutiliza la de WorkOrder. `.env` está ignorado por Git: no lo agregues al repositorio.
 
-Para probar IdentityService, define también `AdminSeed__Email` y `AdminSeed__Password` para crear el administrador inicial. `Jwt__SigningKey` es obligatoria, no tiene valor por defecto y debe contener al menos 32 bytes; el servicio no arranca si falta o es corta. Puedes generar una clave aleatoria con `openssl rand -base64 48`.
+Para probar IdentityService, define también `AdminSeed__Email` y `AdminSeed__Password` para crear el administrador inicial. El script local genera un par RSA de 3072 bits en `.secrets/jwt/` (directorio ignorado por Git): IdentityService configura la ruta de la clave privada y WorkOrderService solo la ruta de la clave pública. IdentityService falla al arrancar si falta una privada RSA válida; WorkOrderService falla si no recibe una clave pública válida.
 
 Configura una sola vez los secretos locales de las APIs:
 
@@ -149,6 +150,8 @@ bash scripts/configure-local-secrets.sh
 ```
 
 El script lee `.env` y guarda cadenas de conexión y credenciales mediante .NET User Secrets fuera del repositorio. Después, al ejecutar cada API en Development, no necesitas volver a cargar ni exportar esas variables. Si cambias los valores de `.env`, vuelve a ejecutar el script para sincronizarlos.
+
+Al cambiar desde la firma HS256, vuelve a ejecutar el script para generar el par RSA local y registrar las rutas en User Secrets. Conserva `.secrets/jwt/private.pem` y no la compartas; solo IdentityService debe leerla.
 
 Inicia las bases locales:
 
@@ -258,6 +261,7 @@ IdentityService requiere `ConnectionStrings__IdentityDb`. Para crear el Admin in
 | `POST` | `/api/work-orders` | Crea una boleta con cliente, prenda y al menos un trabajo; responde con ID y serial. |
 | `PUT` | `/api/work-orders/{id}/price` | Define el precio. |
 | `POST` | `/api/work-orders/{id}/payments` | Registra un abono con `paymentId` y monto. |
+| `POST` | `/api/work-orders/{id}/assignments` | Asigna un sastre activo. Requiere JWT con rol `Admin`. |
 | `GET` | `/health` | Health check. |
 
 Ejemplo de creación:
@@ -284,7 +288,7 @@ La respuesta de creación incluye `id` y `serialNumber`. Luego se usa el ID en l
 
 Definir el precio usa `PUT /api/work-orders/{id}/price` con `{ "amount": 25000 }`; devuelve el ID de la boleta y el precio. Registrar el abono usa `POST /api/work-orders/{id}/payments` con el cuerpo anterior; devuelve el ID del pago y el estado del pago actualizado.
 
-La consulta `GET /api/work-orders/{id}` todavía no está implementada.
+La solicitud de asignación usa `{ "tailorId": "<guid-del-sastre>", "reassignmentReason": null }`. Para asignar, el perfil debe estar activo en la proyección local de WorkOrderService. La consulta `GET /api/work-orders/{id}` todavía no está implementada.
 
 ### TailorService — `http://localhost:5260`
 
@@ -365,10 +369,10 @@ El flujo de trabajo es TDD: escribe una prueba que falle, implementa el mínimo 
 ## Seguridad y secretos
 
 - No guardes secretos, cadenas de conexión, contraseñas ni tokens en el código, los ejemplos HTTP o Git. Usa `.env` local (ignorado por Git) o variables de entorno.
-- IdentityService emite JWT y protege la emisión de invitaciones con rol Admin. WorkOrderService y TailorService todavía no validan tokens; mantenlos en desarrollo local y no los expongas a Internet.
+- IdentityService emite JWT RS256 y protege la emisión de invitaciones con rol Admin. WorkOrderService valida esos tokens usando solo la clave pública y protege la asignación con rol Admin. TailorService todavía no valida tokens; mantenlo en desarrollo local y no lo expongas a Internet.
 - IdentityService bloquea una cuenta por 5 minutos tras 5 fallos. Para correo inexistente o cuenta bloqueada ejecuta una verificación de hash ficticio; esto reduce diferencias de trabajo criptográfico, pero no garantiza tiempos de respuesta idénticos.
 - La entrega de invitaciones actual solo existe en Development y escribe el token en logs. No uses esa entrega en producción.
-- Configura `Jwt__SigningKey` y las credenciales de Admin mediante secretos del entorno. La clave JWT es obligatoria (mínimo 32 bytes). Con HS256, solo IdentityService debe conocerla; antes de que otros servicios validen tokens, cambiar a firma asimétrica RS256/ES256.
+- La clave privada RSA es exclusiva de IdentityService y debe guardarse como secreto montado o archivo protegido; los servicios validadores reciben únicamente la clave pública. Localmente, `scripts/configure-local-secrets.sh` genera y registra las rutas de las claves en .NET User Secrets.
 - Una invitación de sastre no puede asignar roles privilegiados. El endpoint que emite invitaciones requiere que la cuenta tenga rol Admin.
 - Al implementar el acceso web, la arquitectura prevista es OIDC Authorization Code con PKCE; no se colocan client secrets en Angular.
 
@@ -404,11 +408,9 @@ test/
 
 ## Siguiente trabajo
 
-1. Probar el ciclo completo Outbox de TailorService → RabbitMQ → consumidor WorkOrderService.
-2. Añadir exclusión/lease para evitar despachos concurrentes si se ejecutan varias instancias de TailorService.
-3. Incorporar contratos y outbox para los eventos necesarios de WorkOrderService.
-4. Exponer `AssignTailor` en la API de WorkOrderService.
-5. Completar casos de uso restantes de Tailor y WorkOrder; luego SettlementService, Gateway y frontend.
+1. Añadir exclusión/lease para evitar despachos concurrentes si se ejecutan varias instancias de TailorService.
+2. Incorporar contratos y outbox para los eventos necesarios de WorkOrderService.
+3. Completar casos de uso restantes de Tailor y WorkOrder; luego SettlementService, Gateway y frontend.
 
 El orden puede cambiar cuando el negocio o una decisión técnica lo justifique. Mantén este README y las skills sincronizados al cerrar cada etapa.
 
