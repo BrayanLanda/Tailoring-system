@@ -6,7 +6,6 @@ using IdentityService.Infrastructure.Persistence.Entities;
 using IdentityService.Infrastructure.Persistence.Repositories;
 using IdentityService.Infrastructure.Security;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -16,10 +15,12 @@ namespace IdentityService.Infrastructure;
 
 public static class DependencyInjection
 {
+    private const int MinimumSigningKeyBytes = 32;
+
     public static IServiceCollection AddIdentityInfrastructure(
         this IServiceCollection services,
         string connectionString,
-        IConfiguration? configuration = null)
+        IConfiguration configuration)
     {
         services.AddDbContext<IdentityDbContext>(options =>
             options.UseNpgsql(connectionString).UseSnakeCaseNamingConvention());
@@ -36,20 +37,17 @@ public static class DependencyInjection
         .AddRoles<AppRole>()
         .AddEntityFrameworkStores<IdentityDbContext>();
 
-        var jwtSection = configuration?.GetSection(JwtOptions.SectionName);
-        if (jwtSection is not null && jwtSection.Exists())
-        {
-            services.Configure<JwtOptions>(jwtSection);
-        }
+        var jwtSection = configuration.GetSection(JwtOptions.SectionName);
+        var jwtOptions = jwtSection.Get<JwtOptions>() ?? new JwtOptions();
 
-        var jwtOptions = jwtSection?.Get<JwtOptions>() ?? new JwtOptions();
+        // HS256 needs a key of at least 256 bits, and there is no default key: anyone who knew it
+        // could forge a token for any user, including an administrator.
+        if (Encoding.UTF8.GetByteCount(jwtOptions.SigningKey) < MinimumSigningKeyBytes)
+            throw new InvalidOperationException(
+                $"Jwt:SigningKey is missing or shorter than {MinimumSigningKeyBytes} bytes. " +
+                "Set a random secret of at least 32 bytes (for example, 'openssl rand -base64 48').");
 
-        if (string.IsNullOrWhiteSpace(jwtOptions.SigningKey))
-        {
-            // Default development fallback key if not set
-            jwtOptions.SigningKey = "sastreria-super-secret-development-signing-key-32chars!";
-            services.Configure<JwtOptions>(options => options.SigningKey = jwtOptions.SigningKey);
-        }
+        services.Configure<JwtOptions>(jwtSection);
 
         services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             .AddJwtBearer(options =>
@@ -75,11 +73,7 @@ public static class DependencyInjection
         services.AddScoped<IAccountProvisioner, AspNetIdentityAccountProvisioner>();
         services.AddScoped<IAuthenticationService, AspNetIdentityAuthenticationService>();
 
-        var adminSection = configuration?.GetSection(AdminSeedOptions.SectionName);
-        if (adminSection is not null && adminSection.Exists())
-        {
-            services.Configure<AdminSeedOptions>(adminSection);
-        }
+        services.Configure<AdminSeedOptions>(configuration.GetSection(AdminSeedOptions.SectionName));
         services.AddScoped<IdentityDataSeeder>();
 
         return services;

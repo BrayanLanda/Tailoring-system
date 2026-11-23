@@ -1,5 +1,4 @@
 using IdentityService.Application.Abstractions;
-using IdentityService.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace IdentityService.Infrastructure.IntegrationTests;
@@ -10,7 +9,7 @@ public sealed class InvitationTokenServicesTests
     public void GeneratedTokens_AreUniqueAndTheirHashesMatchTheRawValue()
     {
         using var serviceProvider = new ServiceCollection()
-            .AddIdentityInfrastructure("Host=unused;Database=unused;Username=unused;Password=unused")
+            .AddIdentityInfrastructure("Host=unused;Database=unused;Username=unused;Password=unused", TestConfiguration.WithJwtKey())
             .BuildServiceProvider();
 
         var generator = serviceProvider.GetRequiredService<IInvitationTokenGenerator>();
