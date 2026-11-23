@@ -2,7 +2,7 @@
 
 Sistema para administrar boletas de arreglos de ropa, sastres, pagos y liquidaciones. El proyecto reemplaza el control manual en cuadernos y, a la vez, sirve para aprender diseño de dominio, TDD, PostgreSQL y una arquitectura de microservicios en .NET.
 
-> **Estado:** WorkOrderService y TailorService tienen una primera versión funcional. IdentityService tiene autenticación local e invitaciones en desarrollo. Contracts, RabbitMQ local y el publicador Outbox de TailorService están implementados; falta validar el ciclo contra un broker real y crear consumidores.
+> **Estado:** WorkOrderService y TailorService tienen una primera versión funcional. IdentityService tiene autenticación local e invitaciones en desarrollo. El consumidor de Tailor en WorkOrderService procesa eventos con RabbitMQ y PostgreSQL reales; falta validar el ciclo completo desde el outbox de TailorService hasta la proyección.
 
 ## Contenido
 
@@ -36,7 +36,7 @@ La solución elige microservicios como objetivo educativo y de práctica. No tod
 |---|---|---|---|
 | WorkOrderService | Boletas, seriales, precios, abonos, estados y garantías | PostgreSQL `work_order_db` | Primera versión funcional |
 | TailorService | Perfil y estado activo/inactivo del sastre | PostgreSQL `tailor_db` | Registro y consulta por ID funcionales |
-| IdentityService | Cuentas, credenciales, roles, invitaciones y tokens | PostgreSQL `identity_db` | API de login JWT e invitaciones implementada; login inválido devuelve 401 |
+| IdentityService | Cuentas, credenciales, roles, invitaciones y tokens | PostgreSQL `identity_db` | API JWT e invitaciones; login con lockout, pruebas de flujo y claims del sastre |
 | SettlementService | Periodos, elegibilidad y liquidación del porcentaje del sastre | PostgreSQL + Redis | Planeado |
 | GatewayService | Entrada única, enrutamiento y seguridad | No aplica | Planeado |
 | Angular | Interfaz web | No aplica | Planeado |
@@ -77,7 +77,9 @@ Las decisiones vigentes de autenticación son cuentas locales con correo y contr
 - TailorService guarda los eventos de integración en `outbox_messages` junto con los cambios del sastre, en la misma transacción.
 - Un worker revisa el outbox cada cinco segundos y publica mensajes persistentes a un exchange durable con publisher confirms. Si el broker falla, el mensaje queda pendiente y se reintenta.
 - El envío ofrece semántica **al menos una vez**: un fallo después de que RabbitMQ confirma, pero antes de guardar `ProcessedOn`, puede producir un duplicado. Los consumidores deben deduplicar por `EventId`.
-- **Pendiente:** prueba end-to-end contra RabbitMQ, exclusión de filas al escalar a varias instancias y consumidores idempotentes con reintentos/DLQ.
+- El publicador declara solo el exchange. WorkOrderService consume desde su propia cola durable, `work-order.tailor-events`, enlazada con `tailor.#`; persiste el estado local del sastre y confirma el mensaje después de guardar.
+- La proyección usa `OccurredOn` como “último momento visto”: ignora eventos repetidos o anteriores. Los errores reintentables esperan el TTL configurado (`RABBITMQ_RETRY_DELAY_MILLISECONDS`, 5000 por defecto), hasta `RABBITMQ_MAX_RETRIES` (3); luego van a `work-order.tailor-events.dlq`.
+- **Pendiente:** probar el ciclo completo outbox→RabbitMQ→proyección, exclusión de filas del outbox al escalar TailorService y políticas operativas para inspeccionar/reprocesar la DLQ.
 
 SettlementService, Gateway, frontend Angular, Dockerfiles y despliegue Kubernetes siguen planeados.
 
@@ -165,7 +167,7 @@ docker compose ps
 
 Cada base usa un volumen persistente. `docker compose down` detiene los contenedores sin borrar los datos. **`docker compose down -v` elimina los volúmenes y las bases locales; úsalo solo si quieres borrar esos datos.** Cambiar `POSTGRES_PASSWORD` en `.env` no cambia la contraseña de una base que ya fue inicializada en su volumen.
 
-TailorService toma las credenciales RabbitMQ de sus User Secrets. Si RabbitMQ no está disponible, los eventos permanecen en el outbox y el worker reintenta.
+WorkOrderService y TailorService toman las credenciales RabbitMQ de User Secrets. `scripts/configure-local-secrets.sh` configura ambos servicios; si RabbitMQ no está disponible, el outbox de Tailor conserva los eventos y el consumidor de WorkOrder no puede procesarlos hasta que el broker vuelva.
 
 ## Base de datos y migraciones
 
@@ -203,7 +205,7 @@ dotnet ef database update \
 
 Las herramientas de diseño leen `ConnectionStrings__WorkOrderDb`, `ConnectionStrings__TailorDb` y `ConnectionStrings__IdentityDb`. IdentityService tiene un fallback de conexión local para herramientas EF cuando no se define esa variable. Las migraciones actuales son:
 
-- WorkOrderService: `InitialCreate`, `AddWorkOrderSerialNumberSequence`, `AddWorkOrderVersion`.
+- WorkOrderService: `InitialCreate`, `AddWorkOrderSerialNumberSequence`, `AddWorkOrderVersion`, `AddAssignableTailorProjection`.
 - TailorService: `InitialCreate`, `AddTailorOutbox`.
 - IdentityService: `InitialCreate`, `AddAspNetIdentityTables`.
 
@@ -338,7 +340,7 @@ Pruebas unitarias de dominio, Application y manejo de errores de API, excluyendo
 dotnet test Sastreria.slnx --filter "Category!=Integration"
 ```
 
-Las pruebas de persistencia usan PostgreSQL real mediante Testcontainers, por lo que requieren Docker:
+Las pruebas de infraestructura usan PostgreSQL y RabbitMQ reales mediante Testcontainers, por lo que requieren Docker:
 
 ```bash
 dotnet test test/WorkOrderService.Infrastructure.IntegrationTests/WorkOrderService.Infrastructure.IntegrationTests.csproj
@@ -346,7 +348,7 @@ dotnet test test/TailorService.Infrastructure.IntegrationTests/TailorService.Inf
 dotnet test test/IdentityService.Infrastructure.IntegrationTests/IdentityService.Infrastructure.IntegrationTests.csproj
 ```
 
-Las pruebas de persistencia aplican migraciones en un contenedor propio y usan el registro real de dependencias. Las pruebas HTTP de Identity usan PostgreSQL Testcontainers y `WebApplicationFactory`; configuran por variables de entorno antes de iniciar el host. Prueba el flujo HTTP actual con:
+Las pruebas de WorkOrder Infrastructure cubren la proyección en PostgreSQL y el consumo, reintentos y DLQ con RabbitMQ. Las pruebas de persistencia aplican migraciones en contenedores propios y usan el registro real de dependencias. Las pruebas HTTP de Identity usan PostgreSQL Testcontainers y `WebApplicationFactory`; configuran por variables de entorno antes de iniciar el host. Prueba el flujo HTTP actual con:
 
 ```bash
 dotnet test test/IdentityService.Api.Tests/IdentityService.Api.Tests.csproj --filter "Category=Integration"
@@ -364,6 +366,7 @@ El flujo de trabajo es TDD: escribe una prueba que falle, implementa el mínimo 
 
 - No guardes secretos, cadenas de conexión, contraseñas ni tokens en el código, los ejemplos HTTP o Git. Usa `.env` local (ignorado por Git) o variables de entorno.
 - IdentityService emite JWT y protege la emisión de invitaciones con rol Admin. WorkOrderService y TailorService todavía no validan tokens; mantenlos en desarrollo local y no los expongas a Internet.
+- IdentityService bloquea una cuenta por 5 minutos tras 5 fallos. Para correo inexistente o cuenta bloqueada ejecuta una verificación de hash ficticio; esto reduce diferencias de trabajo criptográfico, pero no garantiza tiempos de respuesta idénticos.
 - La entrega de invitaciones actual solo existe en Development y escribe el token en logs. No uses esa entrega en producción.
 - Configura `Jwt__SigningKey` y las credenciales de Admin mediante secretos del entorno. La clave JWT es obligatoria (mínimo 32 bytes). Con HS256, solo IdentityService debe conocerla; antes de que otros servicios validen tokens, cambiar a firma asimétrica RS256/ES256.
 - Una invitación de sastre no puede asignar roles privilegiados. El endpoint que emite invitaciones requiere que la cuenta tenga rol Admin.
@@ -401,11 +404,11 @@ test/
 
 ## Siguiente trabajo
 
-1. Probar el ciclo Outbox de TailorService end-to-end con RabbitMQ, incluyendo fallo y reintento.
-2. Añadir exclusión/lease para evitar despachos concurrentes si se ejecutan varias instancias.
+1. Probar el ciclo completo Outbox de TailorService → RabbitMQ → consumidor WorkOrderService.
+2. Añadir exclusión/lease para evitar despachos concurrentes si se ejecutan varias instancias de TailorService.
 3. Incorporar contratos y outbox para los eventos necesarios de WorkOrderService.
-4. Completar casos de uso restantes de Tailor y WorkOrder.
-5. SettlementService, Gateway y frontend.
+4. Exponer `AssignTailor` en la API de WorkOrderService.
+5. Completar casos de uso restantes de Tailor y WorkOrder; luego SettlementService, Gateway y frontend.
 
 El orden puede cambiar cuando el negocio o una decisión técnica lo justifique. Mantén este README y las skills sincronizados al cerrar cada etapa.
 

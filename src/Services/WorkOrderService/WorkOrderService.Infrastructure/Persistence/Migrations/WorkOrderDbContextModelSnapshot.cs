@@ -116,6 +116,26 @@ namespace WorkOrderService.Infrastructure.Persistence.Migrations
                     b.ToTable("work_orders", (string)null);
                 });
 
+            modelBuilder.Entity("WorkOrderService.Infrastructure.Persistence.Entities.AssignableTailorProjection", b =>
+                {
+                    b.Property<Guid>("TailorId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tailor_id");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_active");
+
+                    b.Property<DateTimeOffset>("LastOccurredOn")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_occurred_on");
+
+                    b.HasKey("TailorId")
+                        .HasName("pk_assignable_tailors");
+
+                    b.ToTable("assignable_tailors", (string)null);
+                });
+
             modelBuilder.Entity("WorkOrderService.Domain.Entities.WorkOrder", b =>
                 {
                     b.OwnsMany("WorkOrderService.Domain.Entities.Payment", "Payments", b1 =>

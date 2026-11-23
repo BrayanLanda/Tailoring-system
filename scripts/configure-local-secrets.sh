@@ -34,6 +34,12 @@ tailor_project="src/Services/TailorService/TailorService.Api/TailorService.Api.c
 identity_project="src/Services/IdentityService/IdentityService.Api/IdentityService.Api.csproj"
 
 set_secret "$work_order_project" "ConnectionStrings:WorkOrderDb" "$work_order_connection"
+set_secret "$work_order_project" "RABBITMQ_HOST" "${RABBITMQ_HOST:-localhost}"
+set_secret "$work_order_project" "RABBITMQ_PORT" "${RABBITMQ_PORT:-5672}"
+set_secret "$work_order_project" "RABBITMQ_USER" "$RABBITMQ_USER"
+set_secret "$work_order_project" "RABBITMQ_PASSWORD" "$RABBITMQ_PASSWORD"
+set_secret "$work_order_project" "RABBITMQ_MAX_RETRIES" "${RABBITMQ_MAX_RETRIES:-3}"
+set_secret "$work_order_project" "RABBITMQ_RETRY_DELAY_MILLISECONDS" "${RABBITMQ_RETRY_DELAY_MILLISECONDS:-5000}"
 set_secret "$tailor_project" "ConnectionStrings:TailorDb" "$tailor_connection"
 set_secret "$tailor_project" "RABBITMQ_HOST" "${RABBITMQ_HOST:-localhost}"
 set_secret "$tailor_project" "RABBITMQ_PORT" "${RABBITMQ_PORT:-5672}"

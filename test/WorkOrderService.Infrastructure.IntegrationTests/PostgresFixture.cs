@@ -9,13 +9,16 @@ public sealed class PostgresFixture : IAsyncLifetime
 {
     private readonly PostgreSqlContainer _container = new PostgreSqlBuilder("postgres:17").Build();
     private ServiceProvider _service = null!;
+    public string ConnectionString { get; private set; } = string.Empty;
+    public IServiceScopeFactory ScopeFactory => _service.GetRequiredService<IServiceScopeFactory>();
 
     public async Task InitializeAsync()
     {
         await _container.StartAsync();
+        ConnectionString = _container.GetConnectionString();
 
         _service = new ServiceCollection()
-            .AddWorkOrderInfrastructure(_container.GetConnectionString())
+            .AddWorkOrderInfrastructure(ConnectionString)
             .BuildServiceProvider();
 
         await using var scope = _service.CreateAsyncScope();

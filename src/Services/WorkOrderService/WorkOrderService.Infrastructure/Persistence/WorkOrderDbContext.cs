@@ -1,12 +1,14 @@
 using Microsoft.EntityFrameworkCore;
 using WorkOrderService.Domain.Entities;
 using WorkOrderService.Infrastructure.Persistence.Configurations;
+using WorkOrderService.Infrastructure.Persistence.Entities;
 
 namespace WorkOrderService.Infrastructure.Persistence;
 
 public class WorkOrderDbContext(DbContextOptions<WorkOrderDbContext> options) : DbContext(options)
 {
     public DbSet<WorkOrder> WorkOrders => Set<WorkOrder>();
+    public DbSet<AssignableTailorProjection> AssignableTailors => Set<AssignableTailorProjection>();
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.HasSequence<long>("work_order_serial_number")
@@ -14,6 +16,7 @@ public class WorkOrderDbContext(DbContextOptions<WorkOrderDbContext> options) : 
             .IncrementsBy(1);
 
         modelBuilder.ApplyConfiguration(new WorkOrderConfiguration());
+        modelBuilder.ApplyConfiguration(new AssignableTailorProjectionConfiguration());
     }
 
     public override Task<int> SaveChangesAsync(

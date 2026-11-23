@@ -7,7 +7,6 @@ public sealed class RabbitMqIntegrationEventPublisher(RabbitMqOptions options)
     : IIntegrationEventPublisher, IAsyncDisposable
 {
     private const string ExchangeName = "sastreria.integration.events";
-    private const string QueueName = "tailor.integration.events";
     private readonly SemaphoreSlim _connectionLock = new(1, 1);
     private IConnection? _connection;
     private IChannel? _channel;
@@ -68,8 +67,6 @@ public sealed class RabbitMqIntegrationEventPublisher(RabbitMqOptions options)
             _channel = await _connection.CreateChannelAsync(channelOptions, cancellationToken);
 
             await _channel.ExchangeDeclareAsync(ExchangeName, ExchangeType.Topic, durable: true, cancellationToken: cancellationToken);
-            await _channel.QueueDeclareAsync(QueueName, durable: true, exclusive: false, autoDelete: false, cancellationToken: cancellationToken);
-            await _channel.QueueBindAsync(QueueName, ExchangeName, "tailor.#", cancellationToken: cancellationToken);
         }
         finally
         {

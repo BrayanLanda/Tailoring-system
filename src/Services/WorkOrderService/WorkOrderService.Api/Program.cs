@@ -4,6 +4,7 @@ using WorkOrderService.Application.WorkOrders.SetWorkOrderPrice;
 using WorkOrderService.Application.WorkOrders.RegisterPayment;
 using WorkOrderService.Infrastructure;
 using WorkOrderService.Api;
+using WorkOrderService.Api.BackgroundServices;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -15,6 +16,8 @@ builder.Services.AddHealthChecks();
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<ApiExceptionHandler>();
 builder.Services.AddWorkOrderInfrastructure(connectionString);
+builder.Services.AddWorkOrderMessaging(builder.Configuration);
+builder.Services.AddHostedService<TailorEventConsumerBackgroundService>();
 builder.Services.AddScoped<CreateWorkOrderHandler>();
 builder.Services.AddScoped<SetWorkOrderPriceHandler>();
 builder.Services.AddScoped<RegisterPaymentHandler>();

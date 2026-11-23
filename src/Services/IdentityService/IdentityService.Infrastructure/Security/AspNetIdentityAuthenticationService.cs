@@ -1,5 +1,6 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text;
 using IdentityService.Application.Abstractions;
 using IdentityService.Domain.ValueObjects;
@@ -15,6 +16,8 @@ public sealed class AspNetIdentityAuthenticationService(
     IOptions<JwtOptions> jwtOptions,
     TimeProvider timeProvider) : IAuthenticationService
 {
+    private static readonly AppUser TimingPaddingUser = new();
+    private static readonly string TimingPaddingPasswordHash = CreateTimingPaddingPasswordHash();
     private readonly JwtOptions _options = jwtOptions.Value;
 
     public async Task<AuthenticationResult> AuthenticateAsync(
@@ -23,16 +26,21 @@ public sealed class AspNetIdentityAuthenticationService(
         CancellationToken cancellationToken = default)
     {
         var user = await userManager.FindByEmailAsync(email.Value);
-        if (user is null)
+        if (user is null || await userManager.IsLockedOutAsync(user))
         {
+            VerifyDummyPassword(userManager, password);
             return AuthenticationResult.Failed("Invalid email or password.");
         }
 
         var isPasswordValid = await userManager.CheckPasswordAsync(user, password);
         if (!isPasswordValid)
         {
+            await userManager.AccessFailedAsync(user);
             return AuthenticationResult.Failed("Invalid email or password.");
         }
+
+        if (user.AccessFailedCount > 0)
+            await userManager.ResetAccessFailedCountAsync(user);
 
         var roles = await userManager.GetRolesAsync(user);
 
@@ -73,5 +81,14 @@ public sealed class AspNetIdentityAuthenticationService(
         var rawToken = tokenHandler.WriteToken(token);
 
         return AuthenticationResult.Success(rawToken, expiresAt);
+    }
+
+    private static void VerifyDummyPassword(UserManager<AppUser> userManager, string password) =>
+        userManager.PasswordHasher.VerifyHashedPassword(TimingPaddingUser, TimingPaddingPasswordHash, password);
+
+    private static string CreateTimingPaddingPasswordHash()
+    {
+        var randomPassword = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
+        return new PasswordHasher<AppUser>().HashPassword(TimingPaddingUser, randomPassword);
     }
 }
