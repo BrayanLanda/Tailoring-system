@@ -12,6 +12,7 @@ public static class AuthEndpoints
             .WithName("Login")
             .Produces<LoginResponse>(StatusCodes.Status200OK)
             .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
             .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
 
         return endpoints;

@@ -36,7 +36,7 @@ La solución elige microservicios como objetivo educativo y de práctica. No tod
 |---|---|---|---|
 | WorkOrderService | Boletas, seriales, precios, abonos, estados y garantías | PostgreSQL `work_order_db` | Primera versión funcional |
 | TailorService | Perfil y estado activo/inactivo del sastre | PostgreSQL `tailor_db` | Registro y consulta por ID funcionales |
-| IdentityService | Cuentas, credenciales, roles, invitaciones y tokens | PostgreSQL `identity_db` | Login JWT, invitaciones y seed de roles/Admin implementados; API aún en desarrollo |
+| IdentityService | Cuentas, credenciales, roles, invitaciones y tokens | PostgreSQL `identity_db` | API de login JWT e invitaciones implementada; login inválido devuelve 401 |
 | SettlementService | Periodos, elegibilidad y liquidación del porcentaje del sastre | PostgreSQL + Redis | Planeado |
 | GatewayService | Entrada única, enrutamiento y seguridad | No aplica | Planeado |
 | Angular | Interfaz web | No aplica | Planeado |
@@ -138,7 +138,7 @@ cp .env.example .env
 
 Edita `.env` y establece una contraseña local para `WORK_ORDER_DB_PASSWORD` y `RABBITMQ_PASSWORD`. Puedes definir contraseñas propias para Tailor e Identity con `TAILOR_DB_PASSWORD` e `IDENTITY_DB_PASSWORD`; si quedan vacías, Compose reutiliza la de WorkOrder. `.env` está ignorado por Git: no lo agregues al repositorio.
 
-Para probar IdentityService, define también `AdminSeed__Email` y `AdminSeed__Password` para crear el administrador inicial. Configura `Jwt__SigningKey` con una clave aleatoria de al menos 32 caracteres; puedes generarla con `openssl rand -base64 48`. El código actual usa una clave fija de respaldo cuando falta esta opción, sin restringir ese fallback al entorno Development: configura siempre tu propia clave y no expongas el servicio mientras la configuración siga así.
+Para probar IdentityService, define también `AdminSeed__Email` y `AdminSeed__Password` para crear el administrador inicial. `Jwt__SigningKey` es obligatoria, no tiene valor por defecto y debe contener al menos 32 bytes; el servicio no arranca si falta o es corta. Puedes generar una clave aleatoria con `openssl rand -base64 48`.
 
 Configura una sola vez los secretos locales de las APIs:
 
@@ -326,7 +326,7 @@ Las APIs usan `ProblemDetails` con manejo central de excepciones:
 | `404` | Recurso solicitado no encontrado. |
 | `409` | Conflicto de concurrencia optimista. |
 | `422` | Regla de negocio incumplida. |
-| `401` | Falta autenticación para un endpoint protegido. |
+| `401` | Credenciales inválidas o falta autenticación para un endpoint protegido. El login devuelve un mensaje genérico. |
 | `403` | Usuario autenticado sin el rol requerido. |
 | `500` | Error inesperado; no se deben exponer detalles internos. |
 
@@ -346,7 +346,13 @@ dotnet test test/TailorService.Infrastructure.IntegrationTests/TailorService.Inf
 dotnet test test/IdentityService.Infrastructure.IntegrationTests/IdentityService.Infrastructure.IntegrationTests.csproj
 ```
 
-Las pruebas de integración aplican migraciones en un contenedor propio, usan el registro real de dependencias y un scope nuevo por petición simulada. Prueba toda la solución con:
+Las pruebas de persistencia aplican migraciones en un contenedor propio y usan el registro real de dependencias. Las pruebas HTTP de Identity usan PostgreSQL Testcontainers y `WebApplicationFactory`; configuran por variables de entorno antes de iniciar el host. Prueba el flujo HTTP actual con:
+
+```bash
+dotnet test test/IdentityService.Api.Tests/IdentityService.Api.Tests.csproj --filter "Category=Integration"
+```
+
+Prueba toda la solución con:
 
 ```bash
 dotnet test Sastreria.slnx
@@ -359,7 +365,7 @@ El flujo de trabajo es TDD: escribe una prueba que falle, implementa el mínimo 
 - No guardes secretos, cadenas de conexión, contraseñas ni tokens en el código, los ejemplos HTTP o Git. Usa `.env` local (ignorado por Git) o variables de entorno.
 - IdentityService emite JWT y protege la emisión de invitaciones con rol Admin. WorkOrderService y TailorService todavía no validan tokens; mantenlos en desarrollo local y no los expongas a Internet.
 - La entrega de invitaciones actual solo existe en Development y escribe el token en logs. No uses esa entrega en producción.
-- Configura `Jwt__SigningKey` y las credenciales de Admin mediante secretos del entorno. IdentityService usa una clave JWT fija de respaldo si falta configuración y ese fallback no está limitado a Development; no lo expongas fuera de local hasta exigir una clave externa.
+- Configura `Jwt__SigningKey` y las credenciales de Admin mediante secretos del entorno. La clave JWT es obligatoria (mínimo 32 bytes). Con HS256, solo IdentityService debe conocerla; antes de que otros servicios validen tokens, cambiar a firma asimétrica RS256/ES256.
 - Una invitación de sastre no puede asignar roles privilegiados. El endpoint que emite invitaciones requiere que la cuenta tenga rol Admin.
 - Al implementar el acceso web, la arquitectura prevista es OIDC Authorization Code con PKCE; no se colocan client secrets en Angular.
 

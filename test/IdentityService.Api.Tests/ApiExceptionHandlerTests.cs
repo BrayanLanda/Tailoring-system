@@ -33,6 +33,18 @@ public sealed class ApiExceptionHandlerTests
     }
 
     [Fact]
+    public async Task AuthenticationFailed_IsAnswered401WithGenericDetail()
+    {
+        var (handled, context) = await HandleAsync(new AuthenticationFailedException("user-specific internal detail"));
+
+        Assert.True(handled);
+        Assert.Equal(StatusCodes.Status401Unauthorized, context.Response.StatusCode);
+        var problem = await ReadProblemAsync(context);
+        Assert.NotNull(problem);
+        Assert.Equal("Invalid email or password.", problem.Detail);
+    }
+
+    [Fact]
     public async Task AccountCreationFailed_IsAnswered400WithErrorsDetail()
     {
         var errors = new[] { "Password requires non alphanumeric character.", "Password too short." };

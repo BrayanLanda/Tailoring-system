@@ -1,4 +1,5 @@
 using IdentityService.Application.Auth.Login;
+using IdentityService.Application.Exceptions;
 using IdentityService.Application.Tests.Fakes;
 using IdentityService.Domain.Exceptions;
 
@@ -31,21 +32,21 @@ public sealed class LoginHandlerTests
     }
 
     [Fact]
-    public async Task InvalidPassword_ThrowsDomainException()
+    public async Task InvalidPassword_ThrowsAuthenticationFailedException()
     {
         const string email = "admin@sastreria.com";
         _authService.RegisterUser(email, "CorrectPassword123!", "token", _expiresAt);
 
-        var ex = await Assert.ThrowsAsync<DomainException>(() =>
+        var ex = await Assert.ThrowsAsync<AuthenticationFailedException>(() =>
             _handler.HandleAsync(new LoginCommand(email, "WrongPassword!")));
 
         Assert.Equal(LoginHandler.InvalidCredentialsMessage, ex.Message);
     }
 
     [Fact]
-    public async Task UnknownEmail_ThrowsDomainException()
+    public async Task UnknownEmail_ThrowsAuthenticationFailedException()
     {
-        var ex = await Assert.ThrowsAsync<DomainException>(() =>
+        var ex = await Assert.ThrowsAsync<AuthenticationFailedException>(() =>
             _handler.HandleAsync(new LoginCommand("nonexistent@sastreria.com", "Password123!")));
 
         Assert.Equal(LoginHandler.InvalidCredentialsMessage, ex.Message);

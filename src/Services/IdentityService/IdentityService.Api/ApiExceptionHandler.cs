@@ -30,6 +30,10 @@ public sealed class ApiExceptionHandler : IExceptionHandler
 
     private static (int Status, string Title, string Detail)? Map(Exception exception) => exception switch
     {
+        AuthenticationFailedException => (
+            StatusCodes.Status401Unauthorized,
+            "Authentication failed",
+            "Invalid email or password."),
         AccountCreationFailedException accountEx => (
             StatusCodes.Status400BadRequest,
             "Account creation failed",

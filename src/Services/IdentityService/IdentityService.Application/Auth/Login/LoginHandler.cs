@@ -1,5 +1,5 @@
 using IdentityService.Application.Abstractions;
-using IdentityService.Domain.Exceptions;
+using IdentityService.Application.Exceptions;
 using IdentityService.Domain.ValueObjects;
 
 namespace IdentityService.Application.Auth.Login;
@@ -15,7 +15,7 @@ public sealed class LoginHandler(IAuthenticationService authenticationService)
 
         if (!result.Succeeded || result.Token is null || result.ExpiresAt is null)
         {
-            throw new DomainException(result.Error ?? InvalidCredentialsMessage);
+            throw new AuthenticationFailedException(result.Error ?? InvalidCredentialsMessage);
         }
 
         return new LoginResult(result.Token, result.ExpiresAt.Value);
