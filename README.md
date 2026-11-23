@@ -140,6 +140,14 @@ Edita `.env` y establece una contraseña local para `WORK_ORDER_DB_PASSWORD` y `
 
 Para probar IdentityService, define también `AdminSeed__Email` y `AdminSeed__Password` para crear el administrador inicial. Configura `Jwt__SigningKey` con una clave aleatoria de al menos 32 caracteres; puedes generarla con `openssl rand -base64 48`. El código actual usa una clave fija de respaldo cuando falta esta opción, sin restringir ese fallback al entorno Development: configura siempre tu propia clave y no expongas el servicio mientras la configuración siga así.
 
+Configura una sola vez los secretos locales de las APIs:
+
+```bash
+bash scripts/configure-local-secrets.sh
+```
+
+El script lee `.env` y guarda cadenas de conexión y credenciales mediante .NET User Secrets fuera del repositorio. Después, al ejecutar cada API en Development, no necesitas volver a cargar ni exportar esas variables. Si cambias los valores de `.env`, vuelve a ejecutar el script para sincronizarlos.
+
 Inicia las bases locales:
 
 ```bash
@@ -157,21 +165,7 @@ docker compose ps
 
 Cada base usa un volumen persistente. `docker compose down` detiene los contenedores sin borrar los datos. **`docker compose down -v` elimina los volúmenes y las bases locales; úsalo solo si quieres borrar esos datos.** Cambiar `POSTGRES_PASSWORD` en `.env` no cambia la contraseña de una base que ya fue inicializada en su volumen.
 
-Las variables de `.env` no se convierten automáticamente en cadenas `ConnectionStrings__...` para `dotnet`. Cárgalas en la terminal donde ejecutarás las herramientas o la API:
-
-```bash
-set -a
-source .env
-set +a
-
-export ConnectionStrings__WorkOrderDb="Host=localhost;Port=5433;Database=work_order_db;Username=${WORK_ORDER_DB_USER:-sastreria};Password=${WORK_ORDER_DB_PASSWORD}"
-export ConnectionStrings__TailorDb="Host=localhost;Port=5434;Database=tailor_db;Username=${TAILOR_DB_USER:-sastreria};Password=${TAILOR_DB_PASSWORD:-$WORK_ORDER_DB_PASSWORD}"
-export ConnectionStrings__IdentityDb="Host=localhost;Port=5435;Database=identity_db;Username=${IDENTITY_DB_USER:-sastreria};Password=${IDENTITY_DB_PASSWORD:-$WORK_ORDER_DB_PASSWORD}"
-```
-
-TailorService lee `RABBITMQ_HOST`, `RABBITMQ_PORT`, `RABBITMQ_USER` y `RABBITMQ_PASSWORD` del mismo entorno. Si RabbitMQ no está disponible, los eventos permanecen en el outbox y el worker reintenta.
-
-Repite la carga de variables en cada terminal nueva. Si tu contraseña contiene caracteres especiales de una cadena Npgsql, escápalos según el formato de cadenas de conexión de Npgsql.
+TailorService toma las credenciales RabbitMQ de sus User Secrets. Si RabbitMQ no está disponible, los eventos permanecen en el outbox y el worker reintenta.
 
 ## Base de datos y migraciones
 
@@ -183,7 +177,17 @@ dotnet tool restore
 
 Aplica las migraciones a las bases locales:
 
+El comando `dotnet ef` usa las variables de entorno para las conexiones de diseño. Cárgalas en la terminal de migraciones (las APIs no requieren estos exports):
+
 ```bash
+set -a
+source .env
+set +a
+
+export ConnectionStrings__WorkOrderDb="Host=localhost;Port=5433;Database=work_order_db;Username=${WORK_ORDER_DB_USER:-sastreria};Password=${WORK_ORDER_DB_PASSWORD}"
+export ConnectionStrings__TailorDb="Host=localhost;Port=5434;Database=tailor_db;Username=${TAILOR_DB_USER:-sastreria};Password=${TAILOR_DB_PASSWORD:-$WORK_ORDER_DB_PASSWORD}"
+export ConnectionStrings__IdentityDb="Host=localhost;Port=5435;Database=identity_db;Username=${IDENTITY_DB_USER:-sastreria};Password=${IDENTITY_DB_PASSWORD:-$WORK_ORDER_DB_PASSWORD}"
+
 dotnet ef database update \
   --project src/Services/WorkOrderService/WorkOrderService.Infrastructure/WorkOrderService.Infrastructure.csproj \
   --startup-project src/Services/WorkOrderService/WorkOrderService.Infrastructure/WorkOrderService.Infrastructure.csproj
@@ -233,10 +237,10 @@ dotnet run --project src/Services/TailorService/TailorService.Api/TailorService.
 ```
 
 ```bash
-dotnet run --project src/Services/IdentityService/IdentityService.Api/IdentityService.Api.csproj -- --urls http://localhost:5270
+dotnet run --project src/Services/IdentityService/IdentityService.Api/IdentityService.Api.csproj
 ```
 
-WorkOrderService escucha en `http://localhost:5258`; TailorService, en `http://localhost:5260`; IdentityService se fija en `http://localhost:5270` pasando `--urls` a la aplicación después de `--`. En Development se publica OpenAPI. Hay archivos `.http` de ejemplo para Bruno/REST Client:
+WorkOrderService escucha en `http://localhost:5258`; TailorService, en `http://localhost:5260`; IdentityService, en `http://localhost:5270`. Los perfiles de lanzamiento establecen Development y el puerto local. Las cadenas de conexión y credenciales se leen de User Secrets. En Development se publica OpenAPI. Hay archivos `.http` de ejemplo para Bruno/REST Client:
 
 - [WorkOrderService.Api.http](src/Services/WorkOrderService/WorkOrderService.Api/WorkOrderService.Api.http)
 - [TailorService.Api.http](src/Services/TailorService/TailorService.Api/TailorService.Api.http)
