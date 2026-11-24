@@ -6,6 +6,7 @@ public sealed class JwtOptions
 
     public string Issuer { get; set; } = "sastreria-identity";
     public string Audience { get; set; } = "sastreria-api";
-    public string SigningKey { get; set; } = string.Empty;
+    public string PrivateKeyPem { get; set; } = string.Empty;
+    public string PrivateKeyPath { get; set; } = string.Empty;
     public int ExpirationMinutes { get; set; } = 120;
 }

@@ -48,6 +48,15 @@ public sealed class ApiExceptionHandlerTests
     }
 
     [Fact]
+    public async Task TailorNotAssignable_IsAnswered422()
+    {
+        var (handled, context) = await HandleAsync(new TailorNotAssignableException(Guid.NewGuid()));
+
+        Assert.True(handled);
+        Assert.Equal(StatusCodes.Status422UnprocessableEntity, context.Response.StatusCode);
+    }
+
+    [Fact]
     public async Task UnknownException_IsNotHandled_SoNoInternalDetailsLeak()
     {
         var (handled, _) = await HandleAsync(new InvalidOperationException("secret connection string"));

@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -8,7 +9,7 @@ public sealed class JwtConfigurationTests
     private const string ConnectionString = "Host=unused;Database=unused;Username=unused;Password=unused";
 
     [Fact]
-    public void WithoutASigningKey_RegistrationFails()
+    public void WithoutAPrivateKey_RegistrationFails()
     {
         var configuration = new ConfigurationBuilder().Build();
 
@@ -17,26 +18,27 @@ public sealed class JwtConfigurationTests
     }
 
     [Fact]
-    public void WithAShortSigningKey_RegistrationFails()
+    public void WithInvalidPrivateKey_RegistrationFails()
     {
-        var configuration = Configuration("too-short");
+        var configuration = Configuration("not a PEM key");
 
         Assert.Throws<InvalidOperationException>(() =>
             new ServiceCollection().AddIdentityInfrastructure(ConnectionString, configuration));
     }
 
     [Fact]
-    public void WithASufficientSigningKey_RegistrationSucceeds()
+    public void WithRsaPrivateKey_RegistrationSucceeds()
     {
-        var configuration = Configuration(new string('k', 32));
+        using var rsa = RSA.Create(2048);
+        var configuration = Configuration(rsa.ExportPkcs8PrivateKeyPem());
 
         var services = new ServiceCollection().AddIdentityInfrastructure(ConnectionString, configuration);
 
         Assert.NotNull(services);
     }
 
-    private static IConfiguration Configuration(string signingKey) =>
+    private static IConfiguration Configuration(string privateKeyPem) =>
         new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?> { ["Jwt:SigningKey"] = signingKey })
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["Jwt:PrivateKeyPem"] = privateKeyPem })
             .Build();
 }

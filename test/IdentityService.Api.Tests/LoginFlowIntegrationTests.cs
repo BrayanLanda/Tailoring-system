@@ -2,6 +2,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Security.Cryptography;
 using IdentityService.Api.Auth;
 using IdentityService.Api.TailorInvitations;
 using IdentityService.Application.Abstractions;
@@ -15,6 +16,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
+using Microsoft.IdentityModel.Tokens;
 using Testcontainers.PostgreSql;
 
 namespace IdentityService.Api.Tests;
@@ -24,7 +26,7 @@ public sealed class LoginFlowIntegrationTests : IAsyncLifetime
 {
     private const string AdminEmail = "admin@example.test";
     private const string AdminPassword = "Admin1234!";
-    private const string SigningKey = "integration-test-signing-key-with-at-least-32-bytes";
+    private static readonly string PrivateKeyPem = CreatePrivateKeyPem();
 
     private readonly PostgreSqlContainer _postgres = new PostgreSqlBuilder("postgres:17").Build();
     private readonly CapturingInvitationDelivery _delivery = new();
@@ -37,7 +39,7 @@ public sealed class LoginFlowIntegrationTests : IAsyncLifetime
         await _postgres.StartAsync();
 
         SetEnvironment("ConnectionStrings__IdentityDb", _postgres.GetConnectionString());
-        SetEnvironment("Jwt__SigningKey", SigningKey);
+        SetEnvironment("Jwt__PrivateKeyPem", PrivateKeyPem);
         SetEnvironment("AdminSeed__Email", AdminEmail);
         SetEnvironment("AdminSeed__Password", AdminPassword);
 
@@ -114,6 +116,7 @@ public sealed class LoginFlowIntegrationTests : IAsyncLifetime
         Assert.NotNull(tailorLogin);
 
         var token = new JwtSecurityTokenHandler().ReadJwtToken(tailorLogin.Token);
+        Assert.Equal(SecurityAlgorithms.RsaSha256, token.Header.Alg);
         Assert.Contains(token.Claims, claim => claim.Type == "role" && claim.Value == AppRole.Tailor);
         Assert.Contains(token.Claims, claim => claim.Type == "tailor_profile_id" && claim.Value == tailorProfileId.ToString());
     }
@@ -134,6 +137,12 @@ public sealed class LoginFlowIntegrationTests : IAsyncLifetime
     {
         _originalEnvironment[key] = Environment.GetEnvironmentVariable(key);
         Environment.SetEnvironmentVariable(key, value);
+    }
+
+    private static string CreatePrivateKeyPem()
+    {
+        using var rsa = RSA.Create(2048);
+        return rsa.ExportPkcs8PrivateKeyPem();
     }
 
     private sealed class CapturingInvitationDelivery : IInvitationDelivery

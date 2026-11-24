@@ -1,6 +1,7 @@
 using WorkOrderService.Application.WorkOrders.CreateWorkOrder;
 using WorkOrderService.Application.WorkOrders.SetWorkOrderPrice;
 using WorkOrderService.Application.WorkOrders.RegisterPayment;
+using WorkOrderService.Application.WorkOrders.AssignTailor;
 using WorkOrderService.Domain.ValueObjects;
 
 namespace WorkOrderService.Api.WorkOrders;
@@ -30,6 +31,15 @@ public static class WorkOrderEndpoints
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
+
+        group.MapPost("/{id:guid}/assignments", AssignTailorAsync)
+            .WithName("AssignTailor")
+            .RequireAuthorization(policy => policy.RequireRole("Admin"))
+            .Produces<AssignTailorResponse>()
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
 
         return endpoints;
@@ -98,5 +108,18 @@ public static class WorkOrderEndpoints
             result.WorkOrderId.Value,
             result.PaymentId.Value,
             result.PaymentStatus.ToString()));
+    }
+
+    private static async Task<IResult> AssignTailorAsync(
+        Guid id,
+        AssignTailorRequest request,
+        AssignTailorHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(
+            new AssignTailorCommand(new WorkOrderId(id), request.TailorId, request.ReassignmentReason),
+            cancellationToken);
+
+        return Results.Ok(new AssignTailorResponse(result.WorkOrderId.Value, result.TailorId));
     }
 }

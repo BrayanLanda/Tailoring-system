@@ -2,6 +2,7 @@ using WorkOrderService.Api.WorkOrders;
 using WorkOrderService.Application.WorkOrders.CreateWorkOrder;
 using WorkOrderService.Application.WorkOrders.SetWorkOrderPrice;
 using WorkOrderService.Application.WorkOrders.RegisterPayment;
+using WorkOrderService.Application.WorkOrders.AssignTailor;
 using WorkOrderService.Infrastructure;
 using WorkOrderService.Api;
 using WorkOrderService.Api.BackgroundServices;
@@ -17,14 +18,18 @@ builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<ApiExceptionHandler>();
 builder.Services.AddWorkOrderInfrastructure(connectionString);
 builder.Services.AddWorkOrderMessaging(builder.Configuration);
+builder.Services.AddWorkOrderAuthentication(builder.Configuration);
 builder.Services.AddHostedService<TailorEventConsumerBackgroundService>();
 builder.Services.AddScoped<CreateWorkOrderHandler>();
 builder.Services.AddScoped<SetWorkOrderPriceHandler>();
 builder.Services.AddScoped<RegisterPaymentHandler>();
+builder.Services.AddScoped<AssignTailorHandler>();
 builder.Services.AddSingleton<TimeProvider>(TimeProvider.System);
 
 var app = builder.Build();
 app.UseExceptionHandler();
+app.UseAuthentication();
+app.UseAuthorization();
 
 if (app.Environment.IsDevelopment())
 {

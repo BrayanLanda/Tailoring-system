@@ -1,7 +1,6 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
-using System.Text;
 using IdentityService.Application.Abstractions;
 using IdentityService.Domain.ValueObjects;
 using IdentityService.Infrastructure.Persistence.Entities;
@@ -14,6 +13,7 @@ namespace IdentityService.Infrastructure.Security;
 public sealed class AspNetIdentityAuthenticationService(
     UserManager<AppUser> userManager,
     IOptions<JwtOptions> jwtOptions,
+    JwtSigningMaterial signingMaterial,
     TimeProvider timeProvider) : IAuthenticationService
 {
     private static readonly AppUser TimingPaddingUser = new();
@@ -64,16 +64,13 @@ public sealed class AspNetIdentityAuthenticationService(
             claims.Add(new Claim("tailor_profile_id", user.TailorProfileId.Value.ToString()));
         }
 
-        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_options.SigningKey));
-        var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
-
         var tokenDescriptor = new SecurityTokenDescriptor
         {
             Subject = new ClaimsIdentity(claims),
             Expires = expiresAt.UtcDateTime,
             Issuer = _options.Issuer,
             Audience = _options.Audience,
-            SigningCredentials = credentials
+            SigningCredentials = signingMaterial.SigningCredentials
         };
 
         var tokenHandler = new JwtSecurityTokenHandler();

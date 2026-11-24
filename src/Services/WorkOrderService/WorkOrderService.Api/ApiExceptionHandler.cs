@@ -28,6 +28,7 @@ public sealed class ApiExceptionHandler : IExceptionHandler
     private static (int Status, string Title)? Map(Exception exception) => exception switch
     {
         WorkOrderNotFoundException => (StatusCodes.Status404NotFound, "Work order not found"),
+        TailorNotAssignableException => (StatusCodes.Status422UnprocessableEntity, "Tailor is not assignable"),
         ConcurrencyConflictException => (StatusCodes.Status409Conflict, "The work order was modified by someone else"),
         DomainException => (StatusCodes.Status422UnprocessableEntity, "A business rule was violated"),
         _ => null

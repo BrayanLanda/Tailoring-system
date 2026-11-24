@@ -1,4 +1,4 @@
-using System.Text;
+using System.Security.Cryptography;
 using IdentityService.Application.Abstractions;
 using IdentityService.Domain.Repositories;
 using IdentityService.Infrastructure.Persistence;
@@ -15,8 +15,6 @@ namespace IdentityService.Infrastructure;
 
 public static class DependencyInjection
 {
-    private const int MinimumSigningKeyBytes = 32;
-
     public static IServiceCollection AddIdentityInfrastructure(
         this IServiceCollection services,
         string connectionString,
@@ -43,14 +41,24 @@ public static class DependencyInjection
         var jwtSection = configuration.GetSection(JwtOptions.SectionName);
         var jwtOptions = jwtSection.Get<JwtOptions>() ?? new JwtOptions();
 
-        // HS256 needs a key of at least 256 bits, and there is no default key: anyone who knew it
-        // could forge a token for any user, including an administrator.
-        if (Encoding.UTF8.GetByteCount(jwtOptions.SigningKey) < MinimumSigningKeyBytes)
-            throw new InvalidOperationException(
-                $"Jwt:SigningKey is missing or shorter than {MinimumSigningKeyBytes} bytes. " +
-                "Set a random secret of at least 32 bytes (for example, 'openssl rand -base64 48').");
+        var privateKeyPem = string.IsNullOrWhiteSpace(jwtOptions.PrivateKeyPem)
+            ? (string.IsNullOrWhiteSpace(jwtOptions.PrivateKeyPath) ? null : File.ReadAllText(jwtOptions.PrivateKeyPath))
+            : jwtOptions.PrivateKeyPem;
+        if (string.IsNullOrWhiteSpace(privateKeyPem))
+            throw new InvalidOperationException("Configure Jwt:PrivateKeyPath (or Jwt:PrivateKeyPem); IdentityService signs tokens with its RSA private key.");
+
+        JwtSigningMaterial signingMaterial;
+        try
+        {
+            signingMaterial = new JwtSigningMaterial(privateKeyPem);
+        }
+        catch (Exception exception) when (exception is CryptographicException or ArgumentException)
+        {
+            throw new InvalidOperationException("Jwt:PrivateKeyPem must contain a valid RSA private key of at least 2048 bits.", exception);
+        }
 
         services.Configure<JwtOptions>(jwtSection);
+        services.AddSingleton(signingMaterial);
 
         services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             .AddJwtBearer(options =>
@@ -63,7 +71,7 @@ public static class DependencyInjection
                     ValidateIssuerSigningKey = true,
                     ValidIssuer = jwtOptions.Issuer,
                     ValidAudience = jwtOptions.Audience,
-                    IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtOptions.SigningKey))
+                    IssuerSigningKey = signingMaterial.SecurityKey
                 };
             });
 
