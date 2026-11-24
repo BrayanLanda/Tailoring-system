@@ -5,7 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Testcontainers.PostgreSql;
 using Testcontainers.RabbitMq;
-using TailorService.Application.Abstractions;
+using RabbitMQ.Client.Exceptions;
 using TailorService.Application.Tailors.RegisterTailor;
 using TailorService.Infrastructure;
 using TailorService.Infrastructure.Messaging;
@@ -87,6 +87,48 @@ public sealed class TailorOutboxToProjectionFlowTests(PostgresFixture workOrderP
 
         cancellation.Cancel();
         await consuming;
+    }
+
+    [Fact]
+    public async Task DispatchPending_WhenNoConsumerQueueIsBound_DoesNotMarkTheEventAsDelivered()
+    {
+        await using var tailorPostgres = new PostgreSqlBuilder("postgres:17").Build();
+        await using var rabbit = new RabbitMqBuilder("rabbitmq:4-management")
+            .WithUsername("sastreria-flow-test")
+            .WithPassword("rabbit-flow-test-password")
+            .Build();
+        await Task.WhenAll(tailorPostgres.StartAsync(), rabbit.StartAsync());
+
+        await using var tailorProvider = new ServiceCollection()
+            .AddTailorInfrastructure(tailorPostgres.GetConnectionString())
+            .BuildServiceProvider();
+
+        await using (var migrationScope = tailorProvider.CreateAsyncScope())
+            await migrationScope.ServiceProvider.GetRequiredService<TailorDbContext>().Database.MigrateAsync();
+
+        var brokerUri = new Uri(rabbit.GetConnectionString());
+        var username = Uri.UnescapeDataString(brokerUri.UserInfo.Split(':')[0]);
+        var password = Uri.UnescapeDataString(brokerUri.UserInfo.Split(':')[1]);
+        await using var publisher = new RabbitMqIntegrationEventPublisher(
+            new TailorService.Infrastructure.Messaging.RabbitMqOptions(brokerUri.Host, brokerUri.Port, username, password));
+
+        await using var request = tailorProvider.CreateAsyncScope();
+        var services = request.ServiceProvider;
+        var register = new RegisterTailorHandler(
+            services.GetRequiredService<TailorService.Domain.Repositories.ITailorRepository>(),
+            services.GetRequiredService<TailorService.Application.Abstractions.IUnitOfWork>());
+        await register.HandleAsync(new RegisterTailorCommand("Nobody is listening"));
+
+        var dbContext = services.GetRequiredService<TailorDbContext>();
+        var dispatcher = new OutboxDispatcher(dbContext, publisher);
+
+        // No consumer has declared a queue yet, so the broker cannot route this event anywhere.
+        // RabbitMQ.Client reports the return and the outbox row must remain pending.
+        var publishException = await Record.ExceptionAsync(() => dispatcher.DispatchPendingAsync());
+        Assert.IsType<PublishReturnException>(publishException);
+
+        var message = await dbContext.OutboxMessages.SingleAsync();
+        Assert.Null(message.ProcessedOn);
     }
 
     private async Task<AssignableTailor?> WaitForProjectionAsync(Guid tailorId)

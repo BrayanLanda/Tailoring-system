@@ -76,11 +76,11 @@ Las decisiones vigentes de autenticación son cuentas locales con correo y contr
 - `BuildingBlocks/Contracts` contiene eventos versionables para el registro, desactivación y reactivación de sastres.
 - Compose incluye RabbitMQ con interfaz de administración. Las credenciales se configuran en `.env` como `RABBITMQ_USER` y `RABBITMQ_PASSWORD`; no se usa `guest`.
 - TailorService guarda los eventos de integración en `outbox_messages` junto con los cambios del sastre, en la misma transacción.
-- Un worker revisa el outbox cada cinco segundos y publica mensajes persistentes a un exchange durable con publisher confirms. Si el broker falla, el mensaje queda pendiente y se reintenta.
+- Un worker revisa el outbox cada cinco segundos y publica mensajes persistentes a un exchange durable con publisher confirms y `mandatory: true`. Una prueba con RabbitMQ real confirma que RabbitMQ.Client 7.2.2 lanza `PublishReturnException` cuando no hay cola enlazada; el outbox queda pendiente y se reintenta.
 - El envío ofrece semántica **al menos una vez**: un fallo después de que RabbitMQ confirma, pero antes de guardar `ProcessedOn`, puede producir un duplicado. Los consumidores deben deduplicar por `EventId`.
 - El publicador declara solo el exchange. WorkOrderService consume desde su propia cola durable, `work-order.tailor-events`, enlazada con `tailor.#`; persiste el estado local del sastre y confirma el mensaje después de guardar.
 - La proyección usa `OccurredOn` como “último momento visto”: ignora eventos repetidos o anteriores. Los errores reintentables esperan el TTL configurado (`RABBITMQ_RETRY_DELAY_MILLISECONDS`, 5000 por defecto), hasta `RABBITMQ_MAX_RETRIES` (3); luego van a `work-order.tailor-events.dlq`.
-- **Hecho y probado con Testcontainers:** Tailor outbox→RabbitMQ→proyección PostgreSQL de WorkOrderService. **Pendiente:** exclusión de filas del outbox al escalar TailorService y políticas operativas para inspeccionar/reprocesar la DLQ.
+- **Hecho y probado con Testcontainers:** Tailor outbox→RabbitMQ→proyección PostgreSQL de WorkOrderService y reintento desde el outbox cuando todavía no existe una cola enlazada. El arranque en frío no pierde esos eventos mientras se conserve el outbox. **Pendiente:** reconstruir una proyección si se pierde su base, exclusión de filas del outbox al escalar TailorService y políticas operativas para inspeccionar/reprocesar la DLQ.
 
 SettlementService, Gateway, frontend Angular, Dockerfiles y despliegue Kubernetes siguen planeados.
 
@@ -408,9 +408,10 @@ test/
 
 ## Siguiente trabajo
 
-1. Añadir exclusión/lease para evitar despachos concurrentes si se ejecutan varias instancias de TailorService.
-2. Incorporar contratos y outbox para los eventos necesarios de WorkOrderService.
-3. Completar casos de uso restantes de Tailor y WorkOrder; luego SettlementService, Gateway y frontend.
+1. Definir la autorización de Admin, Receptionist y Tailor para cada endpoint y aplicarla con pruebas 401/403.
+2. Definir los bindings exactos de eventos y cómo reconstruir la proyección de sastres si se pierde su base.
+3. Añadir exclusión/lease al outbox de TailorService e incorporar contratos/outbox de WorkOrderService para SettlementService.
+4. Completar casos de uso restantes de Tailor y WorkOrder; luego SettlementService, Gateway y frontend.
 
 El orden puede cambiar cuando el negocio o una decisión técnica lo justifique. Mantén este README y las skills sincronizados al cerrar cada etapa.
 
